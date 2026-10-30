@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anek+Latin:wdth,wght@75..125,300..800&display=swap" rel="stylesheet">
+<style>
+  :root { --ground:#1d1a16; --floor:#26221d; --flour:#f2ede3; --dim:#a79f92; --turmeric:#e0a93a; --leaf:#3f9e6c; --kumkum:#c9392d; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { width:390px; height:844px; overflow:hidden; background:var(--ground); color:var(--flour); font-family:'Anek Latin',sans-serif; font-variation-settings:'wdth' 100; }
+  header { padding:22px 20px 18px; }
+  .top { display:flex; justify-content:space-between; align-items:center; }
+  .brand { font-weight:750; font-size:22px; letter-spacing:-0.02em; font-variation-settings:'wdth' 112; }
+  .leave { color:var(--dim); font-size:15px; font-weight:600; }
+  .line { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; margin-top:22px; }
+  .who { font-weight:700; font-size:16px; }
+  .who.them { text-align:right; }
+  svg { width:100%; height:44px; display:block; }
+  .status { margin-top:12px; font-size:15px; font-weight:600; color:var(--leaf); }
+  .status span { color:var(--dim); font-weight:400; }
+  .stage { margin:6px 16px 0; height:300px; border-radius:16px; background:#12100d; display:grid; place-items:center; text-align:center; padding:24px; box-shadow:inset 0 0 0 1px #2f2a23; }
+  .stage h2 { font-size:28px; font-weight:700; letter-spacing:-0.02em; font-variation-settings:'wdth' 108; }
+  .stage p { color:var(--dim); font-size:15px; margin-top:8px; line-height:1.45; }
+  .btn { display:inline-flex; align-items:center; gap:8px; height:50px; padding:0 22px; border-radius:12px; font-weight:700; font-size:16px; }
+  .btn.flour { background:var(--flour); color:var(--ground); margin-top:18px; }
+  .btn.ghost { box-shadow:inset 0 0 0 1.5px #3a342b; color:var(--flour); height:40px; padding:0 14px; font-size:15px; }
+  .files { padding:22px 20px 0; }
+  .files-head { display:flex; justify-content:space-between; align-items:center; }
+  .files-head h3 { font-size:22px; font-weight:700; letter-spacing:-0.01em; }
+  .row { padding:16px 0; border-bottom:1px solid #2f2a23; }
+  .row:last-child { border:0; }
+  .name { display:flex; justify-content:space-between; font-weight:650; font-size:16px; }
+  .name small { color:var(--dim); font-weight:500; font-size:14px; font-variant-numeric:tabular-nums; }
+  .dots { display:flex; gap:5px; margin:11px 0 8px; align-items:center; height:8px; }
+  .dots i { width:8px; height:8px; border-radius:50%; background:var(--turmeric); }
+  .dots i.wait { width:3px; height:3px; margin:0 2.5px; background:#5a5246; }
+  .dots.done i { background:var(--leaf); }
+  .meta { color:var(--dim); font-size:14px; font-variant-numeric:tabular-nums; }
+  .meta b { color:var(--flour); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><span class="brand">Dline</span><span class="leave">Leave</span></div>
+  <div class="line">
+    <span class="who">You</span>
+    <svg viewBox="0 0 252 44" aria-hidden="true">
+      <g fill="none" stroke="#f2ede3" stroke-width="2.2" stroke-linecap="round">
+        <path d="M0 22 Q14 -8 28 22 Q42 52 56 22 Q70 -8 84 22 Q98 52 112 22 Q126 -8 140 22 Q154 52 168 22 Q182 -8 196 22 Q210 52 224 22 Q238 -8 252 22"/>
+        <path d="M0 22 Q14 52 28 22 Q42 -8 56 22 Q70 52 84 22 Q98 -8 112 22 Q126 52 140 22 Q154 -8 168 22 Q182 52 196 22 Q210 -8 224 22 Q238 52 252 22"/>
+      </g>
+      <g fill="#e0a93a"><circle cx="14" cy="22" r="2.6"/><circle cx="42" cy="22" r="2.6"/><circle cx="70" cy="22" r="2.6"/><circle cx="98" cy="22" r="2.6"/><circle cx="126" cy="22" r="2.6"/><circle cx="154" cy="22" r="2.6"/><circle cx="182" cy="22" r="2.6"/><circle cx="210" cy="22" r="2.6"/><circle cx="238" cy="22" r="2.6"/></g>
+    </svg>
+    <span class="who them">Them</span>
+  </div>
+  <p class="status">Direct on the same network <span>&nbsp;7 ms ping, 16 lanes</span></p>
+</header>
+
+<section class="stage">
+  <div>
+    <h2>You're connected</h2>
+    <p>Call and send files at the same time.<br>Nothing passes through a server.</p>
+    <span class="btn flour">Start video call</span>
+  </div>
+</section>
+
+<section class="files">
+  <div class="files-head"><h3>Files</h3><span class="btn ghost">Send files</span></div>
+  <div class="row">
+    <div class="name">sunset-varkala.jpg <small>4.2 MB</small></div>
+    <div class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i><i class="wait"></i></div>
+    <p class="meta"><b>Sending</b> 2.6 of 4.2 MB, 3.1 MB/s, 1 s left</p>
+  </div>
+  <div class="row">
+    <div class="name">amma-birthday.mp4 <small>182 MB</small></div>
+    <div class="dots done"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="meta"><b>Received</b> in 14 s, every block checked</p>
+  </div>
+</section>
+</body>
+</html>

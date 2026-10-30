@@ -1,0 +1,8 @@
+{
+  "threshold": 1,
+  "minLines": 6,
+  "minTokens": 60,
+  "reporters": ["console"],
+  "ignore": ["**/*.test.ts", "**/wordlist.ts"],
+  "format": ["typescript", "javascript", "svelte"]
+}

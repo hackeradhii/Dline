@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root { --tile:#f4f4f1; --ink:#1b1b3a; --dim:#5d5d75; --line:#7b2d8e; --go:#00a05a; --amber:#f5a300; }
+  * { box-sizing:border-box; margin:0; }
+  html,body { width:390px; height:844px; overflow:hidden; background:var(--tile); color:var(--ink); font-family:'Overpass',sans-serif; }
+  header { background:var(--ink); color:#fff; padding:20px 20px 22px; }
+  .top { display:flex; justify-content:space-between; align-items:center; font-weight:800; font-size:22px; }
+  .top span { font-size:15px; font-weight:600; opacity:.7; }
+  .diagram { position:relative; height:64px; margin-top:20px; }
+  .bar { position:absolute; left:14px; right:14px; top:24px; height:10px; border-radius:5px; background:var(--line); }
+  .stn { position:absolute; top:16px; width:26px; height:26px; border-radius:50%; background:#fff; border:5px solid var(--line); }
+  .stn.a { left:2px; } .stn.b { right:2px; }
+  .tick { position:absolute; top:34px; width:4px; height:8px; background:var(--line); }
+  .lbl { position:absolute; top:46px; font-weight:800; font-size:15px; }
+  .lbl.a { left:0; } .lbl.b { right:0; }
+  .name { display:inline-flex; gap:8px; align-items:center; margin-top:10px; background:var(--line); padding:6px 12px; border-radius:6px; font-weight:800; font-size:15px; }
+  .name i { width:10px; height:10px; border-radius:50%; background:var(--go); }
+  .name em { font-style:normal; font-weight:400; opacity:.8; }
+  .stage { margin:16px; height:260px; border-radius:14px; background:#fff; display:grid; place-items:center; text-align:center; box-shadow:0 1px 2px rgba(27,27,58,.08), 0 8px 24px rgba(27,27,58,.06); }
+  .stage h2 { font-size:26px; font-weight:800; }
+  .stage p { color:var(--dim); margin-top:6px; font-size:15px; }
+  .btn { display:inline-block; margin-top:16px; background:var(--ink); color:#fff; padding:14px 22px; border-radius:8px; font-weight:800; font-size:16px; }
+  .files { padding:4px 20px; }
+  .fh { display:flex; justify-content:space-between; align-items:center; }
+  .fh h3 { font-size:22px; font-weight:800; }
+  .fh span { border:2px solid var(--ink); border-radius:8px; padding:8px 14px; font-weight:800; font-size:15px; }
+  .stops { position:relative; margin-top:14px; padding-left:30px; }
+  .stops::before { content:''; position:absolute; left:8px; top:8px; bottom:20px; width:6px; border-radius:3px; background:var(--line); }
+  .stop { position:relative; padding-bottom:18px; }
+  .stop::before { content:''; position:absolute; left:-28px; top:4px; width:14px; height:14px; border-radius:50%; background:#fff; border:4px solid var(--line); }
+  .stop b { font-weight:800; font-size:16px; }
+  .stop p { color:var(--dim); font-size:14px; margin-top:2px; }
+  .prog { height:6px; background:#e1e1ea; border-radius:3px; margin-top:8px; }
+  .prog i { display:block; width:62%; height:100%; background:var(--amber); border-radius:3px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">Dline <span>Leave</span></div>
+  <div class="diagram">
+    <div class="bar"></div>
+    <div class="stn a"></div><div class="stn b"></div>
+    <div class="tick" style="left:30%"></div><div class="tick" style="left:50%"></div><div class="tick" style="left:70%"></div>
+    <span class="lbl a">You</span><span class="lbl b">Them</span>
+  </div>
+  <div class="name"><i></i>Direct line <em>same network, 7 ms</em></div>
+</header>
+<section class="stage">
+  <div><h2>You're connected</h2><p>Call and send files at the same time.</p><span class="btn">Start video call</span></div>
+</section>
+<section class="files">
+  <div class="fh"><h3>Files</h3><span>Send files</span></div>
+  <div class="stops">
+    <div class="stop"><b>sunset-varkala.jpg</b><p>Sending 2.6 of 4.2 MB, 3.1 MB/s</p><div class="prog"><i></i></div></div>
+    <div class="stop"><b>amma-birthday.mp4</b><p>Received 182 MB in 14 s, verified</p></div>
+  </div>
+</section>
+</body>
+</html>

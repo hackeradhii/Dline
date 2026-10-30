@@ -1,0 +1,123 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/overpass';
+
+/*
+ * Design tokens: a two-station metro line. Signage navy band, platform-tile ground, the line in
+ * purple. Status colours mean exactly one thing each: direct (green), relayed (amber), lost (red).
+ * `band-*` tokens are for use on the navy band, the rest on the ground and panels.
+ */
+@theme {
+  --font-sans: 'Overpass Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --color-paper: #f1f1ed;
+  --color-panel: #ffffff;
+  --color-ink: #1b1b3a;
+  --color-muted: #595977;
+  --color-hairline: #dcdce4;
+  --color-line: #7b2d8e;
+  --color-line-ink: #ffffff;
+  --color-direct: #00855a;
+  --color-relay: #a86400;
+  --color-cut: #c8322a;
+  --color-stage: #0d0d20;
+
+  --color-band: #1b1b3a;
+  --color-band-ink: #ffffff;
+  --color-band-muted: #b3b3cc;
+  --color-band-line: #a55bd0;
+  --color-band-direct: #35d495;
+  --color-band-relay: #ffb21f;
+  --color-band-cut: #ff6b5e;
+  --color-band-plate: #7b2d8e;
+  --color-band-down: #c8322a;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #0b0b18;
+    --color-panel: #191934;
+    --color-ink: #ececf5;
+    --color-muted: #a6a6c4;
+    --color-hairline: #2c2c50;
+    --color-line: #b878e2;
+    --color-line-ink: #0b0b18;
+    --color-direct: #3dd39a;
+    --color-relay: #f0b24a;
+    --color-cut: #ff7a70;
+    --color-stage: #06060f;
+    --color-band: #1e1e4a;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    min-height: 100dvh;
+    caret-color: var(--color-line);
+    accent-color: var(--color-line);
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-line) 28%, transparent);
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-line);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  .bg-band :focus-visible {
+    outline-color: var(--color-band-ink);
+  }
+  * {
+    scrollbar-color: var(--color-hairline) transparent;
+  }
+  a {
+    text-underline-offset: 0.2em;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Anything pressable answers the press. */
+  .press {
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease;
+  }
+  .press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  /* A soft, offset shadow: the one elevation for panels. */
+  .lift {
+    box-shadow:
+      0 1px 2px rgb(27 27 58 / 0.06),
+      0 10px 28px -6px rgb(27 27 58 / 0.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    .lift {
+      box-shadow:
+        0 1px 2px rgb(0 0 0 / 0.4),
+        0 12px 32px -8px rgb(0 0 0 / 0.5);
+    }
+  }
+}

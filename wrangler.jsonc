@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // One deployable: serves the static app AND hosts the rendezvous Durable Object.
+  "name": "dline",
+  "main": "./src/server/worker.ts",
+  "compatibility_date": "2026-10-29",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    // Only the signaling socket reaches the Worker; everything else is served as static files.
+    "run_worker_first": ["/ws/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "RendezvousRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RendezvousRoom"] }],
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  },
+  "upload_source_maps": true
+}

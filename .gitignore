@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+playwright-report/
+test-results/
+*.log
+
+# Third-party agent skills: reinstall with `npx skills` from skills-lock.json. Dline's own skill is kept.
+.agents/
+.aider-desk/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/dline-realtime/
+
+# Impeccable's local state. Review screenshots show real IP addresses in the connection details.
+.impeccable/review/
+.impeccable/questions/
+.impeccable/*.local.json

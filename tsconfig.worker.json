@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["./worker-configuration.d.ts", "@cloudflare/vitest-plugin/types"]
+  },
+  // Only the server entry and its tests; shared/contracts files are checked as they are imported.
+  "include": ["src/server/**/*.ts", "worker-configuration.d.ts"]
+}
