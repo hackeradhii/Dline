@@ -9,9 +9,12 @@ export async function twoPeers(browser: Browser): Promise<{ a: Page; b: Page; cl
   return { a, b, close: async () => void (await Promise.all([ctxA.close(), ctxB.close()])) };
 }
 
-/** A starts a line, B opens the share link: the default rendezvous pairing. */
-export async function pairWithCode(a: Page, b: Page): Promise<void> {
-  await a.goto('/');
+/**
+ * A starts a line, B opens the share link: the default rendezvous pairing. `query` (e.g.
+ * `?pacing=flow`) goes on A's first page; B gets the same switches through the share link.
+ */
+export async function pairWithCode(a: Page, b: Page, query = ''): Promise<void> {
+  await a.goto(`/${query}`);
   await a.getByRole('button', { name: 'Start a line' }).click();
   const link = await a.getByLabel('Or send this link').inputValue();
   expect(link).toMatch(/#r\.[A-Z0-9]{6}$/);
@@ -19,6 +22,17 @@ export async function pairWithCode(a: Page, b: Page): Promise<void> {
   await expectConnected(a);
   await expectConnected(b);
 }
+
+/** The page query that picks the file pacing from `PACING` (legacy, shadow or flow), if set, and with `debug` offers "Save trace". */
+export function pacingQuery(mode = process.env.PACING, debug = false): string {
+  const params = new URLSearchParams();
+  if (mode) params.set('pacing', mode);
+  if (debug) params.set('debug', '1');
+  return params.size ? `?${params}` : '';
+}
+
+/** The file pacing a page actually runs (`<html data-pacing>`); null on builds from before Flow. */
+export const pacingMode = (page: Page): Promise<string | null> => page.evaluate(() => document.documentElement.dataset.pacing ?? null);
 
 export async function expectConnected(page: Page): Promise<void> {
   await expect(page.getByText("You're connected")).toBeVisible();
@@ -30,6 +44,14 @@ export async function expectVideoPlaying(page: Page, selector: string): Promise<
   await expect
     .poll(() => page.locator(selector).first().evaluate((v: HTMLVideoElement) => v.videoWidth > 0 && v.readyState >= 2 && !v.paused), { timeout: 20_000 })
     .toBe(true);
+}
+
+/** A calls B, B accepts; resolves once each side shows the other's video. */
+export async function startCall(a: Page, b: Page): Promise<void> {
+  await a.getByRole('button', { name: 'Start video call' }).click();
+  await b.getByRole('dialog', { name: 'Incoming video call' }).getByRole('button', { name: 'Accept' }).click();
+  await expectVideoPlaying(a, 'video:not([muted])');
+  await expectVideoPlaying(b, 'video:not([muted])');
 }
 
 /**

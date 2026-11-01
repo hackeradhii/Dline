@@ -7,6 +7,7 @@
   import Plate from '../../ui/Plate.svelte';
   import Sheet from '../../ui/Sheet.svelte';
   import { formatMs } from '../../shared/format';
+  import { saveFile, switches } from '../browser';
   import { lineState, plateTone, statusText } from '../view';
   import DiagnosticsPanel from './DiagnosticsPanel.svelte';
 
@@ -14,9 +15,13 @@
   let detailsOpen = $state(false);
   const path = $derived(room.snapshot?.path);
   const line = $derived(lineState(room.phase, path));
-  // Network-level round trip from ICE; the ctrl heartbeat is only a fallback (it queues behind file data).
-  const ping = $derived(room.snapshot?.rttMs ?? room.rtt);
+  // The live probe round trip while it is fresh (it doesn't lag behind a queue), then the network-level
+  // round trip from ICE; the ctrl heartbeat is only a fallback (it queues behind file data).
+  const ping = $derived(room.pacing?.pingMs ?? room.snapshot?.rttMs ?? room.rtt);
   const moving = $derived(room.transfers.some((t) => t.status === 'transferring'));
+
+  const saveTrace = () =>
+    void saveFile(new Blob([JSON.stringify(room.files.flowTrace)], { type: 'application/json' }), `dline-trace-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
 </script>
 
 <Band wide>
@@ -35,5 +40,15 @@
 </Band>
 
 <Sheet open={detailsOpen} title="Connection" onclose={() => (detailsOpen = false)}>
-  <DiagnosticsPanel snapshot={room.snapshot} mode={room.connection.mode} rtt={room.rtt} lanes={room.lanes} safetyWords={room.safetyWords} />
+  <DiagnosticsPanel
+    snapshot={room.snapshot}
+    mode={room.connection.mode}
+    rtt={room.rtt}
+    lanes={room.lanes}
+    safetyWords={room.safetyWords}
+    pacing={room.pacing}
+    callActive={room.callState === 'active'}
+    debug={switches.debug}
+    onsavetrace={saveTrace}
+  />
 </Sheet>

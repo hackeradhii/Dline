@@ -46,6 +46,25 @@ export class FakeClock implements Clock {
   }
 }
 
+/** A FakeClock whose timers wait at least `minMs` while the page is hidden, as browsers throttle hidden tabs. */
+export class ThrottledClock extends FakeClock {
+  constructor(
+    private readonly visibility: Visibility,
+    private readonly minMs = 1_000,
+  ) {
+    super();
+  }
+
+  override setTimeout(fn: () => void, ms: number): unknown {
+    return super.setTimeout(fn, this.visibility.isVisible() ? ms : Math.max(ms, this.minMs));
+  }
+
+  /** On the same timeline, never throttled: network events, which browsers deliver to hidden tabs on time. */
+  network(fn: () => void, ms: number): void {
+    super.setTimeout(fn, ms);
+  }
+}
+
 export class FakeVisibility implements Visibility {
   #visible = true;
   readonly #listeners = new Set<(v: boolean) => void>();

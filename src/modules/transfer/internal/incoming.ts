@@ -1,7 +1,7 @@
 import type { BlockHasher, FileSink } from '../../../contracts/ports';
 import type { BlockHeader, FileOffer, TransferControl } from '../../../contracts/transfer';
 import { SerialQueue } from '../../../shared/async';
-import type { TransferRecord } from './record';
+import type { TransferError, TransferRecord } from './record';
 
 type Patch = Parameters<TransferRecord['update']>[0];
 
@@ -43,7 +43,7 @@ export class IncomingFile {
 
   accept(header: BlockHeader, data: ArrayBuffer): void {
     if (this.finished) return;
-    if (header.i >= this.blockCount || data.byteLength !== this.#length(header.i)) return void this.fail('Received a block that does not fit the file.');
+    if (header.i >= this.blockCount || data.byteLength !== this.#length(header.i)) return void this.fail('bad-block');
     if (this.#have[header.i]) return this.#ack(header.i); // Re-sent after a lane dropped; already stored.
     const digest = this.deps.hasher.digest(data);
     digest.catch(() => undefined);
@@ -70,7 +70,7 @@ export class IncomingFile {
     this.#abort({ status: 'cancelled' }, null);
   }
 
-  fail(reason: string): void {
+  fail(reason: TransferError): void {
     this.#abort({ status: 'failed', error: reason }, { t: 'file-cancel', f: this.offer.f });
   }
 
@@ -82,7 +82,7 @@ export class IncomingFile {
   }
 
   #damaged(): void {
-    this.#abort({ status: 'failed', verified: false, error: 'File damaged in transit. Ask them to send it again.' }, { t: 'file-done', f: this.offer.f, ok: false });
+    this.#abort({ status: 'failed', verified: false, error: 'damaged' }, { t: 'file-done', f: this.offer.f, ok: false });
   }
 
   #abort(patch: Patch, tell: TransferControl | null): void {
@@ -102,7 +102,7 @@ export class IncomingFile {
   }
 
   #run(task: () => Promise<void>): void {
-    this.#writes.run(task).catch((error: unknown) => this.fail(error instanceof Error ? error.message : 'Could not save the file.'));
+    this.#writes.run(task).catch(() => this.fail('unsaved'));
   }
 
   #length(index: number): number {

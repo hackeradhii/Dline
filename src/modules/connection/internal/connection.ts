@@ -148,7 +148,7 @@ export class Connection implements ChannelFactory, StatsSource, TransceiverHost,
   }
 
   restartIce(): void {
-    if (this.#phase === 'lost' || this.#phase === 'closed') return;
+    if (this.#over) return;
     this.#negotiator.restartIce();
   }
 
@@ -193,6 +193,11 @@ export class Connection implements ChannelFactory, StatsSource, TransceiverHost,
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
+
+  /** Lost or closed: nothing will bring this connection back. */
+  get #over(): boolean {
+    return this.#phase === 'lost' || this.#phase === 'closed';
+  }
 
   #createControlChannel(): void {
     if (this.control.isOpen) return;
@@ -246,7 +251,7 @@ export class Connection implements ChannelFactory, StatsSource, TransceiverHost,
   }
 
   #onPeerState(): void {
-    if (this.#phase === 'lost' || this.#phase === 'closed') return;
+    if (this.#over) return;
     const state = this.#pc.connectionState;
     if (!this.control.isOpen) {
       // ICE gave up before we ever connected, while we were expecting a connection: no direct path.
@@ -259,7 +264,7 @@ export class Connection implements ChannelFactory, StatsSource, TransceiverHost,
   }
 
   #fail(reason: FailureReason): void {
-    if (this.#phase === 'lost' || this.#phase === 'closed') return;
+    if (this.#over) return;
     this.#stopTimers();
     this.#setPhase('lost');
     this.events.emit('failure', reason);

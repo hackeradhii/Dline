@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:staging": "vite build --mode staging && wrangler deploy",
     "cf-typegen": "wrangler types",
     "typecheck": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "lint": "eslint .",

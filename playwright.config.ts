@@ -19,6 +19,8 @@ const { baseURL, webServer } = appServer(!!process.env.E2E_PREVIEW);
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  // Playwright empties its output folder on every run; the bench keeps its results in test-results/.
+  outputDir: 'test-results/e2e',
   timeout: 90_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,

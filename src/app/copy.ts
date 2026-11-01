@@ -4,6 +4,8 @@ import type { FailureReason } from '../modules/connection';
 import type { NoPathCause, Verdict } from '../modules/diagnostics';
 import type { LinkErrorReason } from '../modules/pairing';
 import type { CallNotice } from '../modules/call';
+import type { PacingMode, TransferError } from '../modules/transfer';
+import { formatSpeed } from '../shared/format';
 
 export const VERDICT_COPY: Record<Verdict, { title: string; detail: string }> = {
   good: { title: 'Ready for a direct connection', detail: 'Your network allows peer-to-peer connections.' },
@@ -69,4 +71,27 @@ export const CALL_NOTICE_COPY: Record<CallNotice, string> = {
   unavailable: 'No camera or microphone was found.',
 };
 
+export const TRANSFER_ERROR_COPY: Record<TransferError, string> = {
+  unreadable: 'Could not read the file.',
+  'arrived-damaged': 'The file arrived damaged. Try sending it again.',
+  'no-response': 'No response from the other device.',
+  'bad-block': 'Received a block that does not fit the file.',
+  damaged: 'File damaged in transit. Ask them to send it again.',
+  unsaved: 'Could not save the file.',
+};
+
 export const IN_APP_BROWSER_COPY = 'This app browser may block the camera. Tap ⋯ and choose "Open in browser" (Chrome or Safari).';
+
+/** "File pacing" in the connection details: the upload budget files get right now. */
+export function filePacingCopy(limit: number | null, callActive: boolean): string {
+  if (limit === null) return 'Off';
+  if (limit === 0) return 'Paused for a moment to measure the line';
+  return callActive ? `${formatSpeed(limit)}, leaving room for the call` : formatSpeed(limit);
+}
+
+/** The pacing mode, shown with `?debug=1`. */
+export const PACING_MODE_COPY: Record<PacingMode, string> = {
+  legacy: 'Legacy (before Flow)',
+  shadow: 'Shadow (Flow measures, legacy paces)',
+  flow: 'Flow',
+};

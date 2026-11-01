@@ -1,7 +1,26 @@
 /** Browser implementations of the ports the modules depend on (wired only here, in the app layer). */
 import type { MediaDevicesPort } from '../contracts/ports';
+import { PACING_MODES, type PacingMode } from '../modules/transfer';
 import type { Unsubscribe } from '../shared/emitter';
 import type { Visibility } from '../shared/timer';
+
+/** Developer switches in the page URL (PLAN.md §5.6). Share links carry them, so both devices match. */
+const SWITCH_KEYS = ['pacing', 'debug'] as const;
+
+export interface Switches {
+  /** The file pacing to run: `?pacing=legacy|shadow|flow`, else this build's default. */
+  pacing: PacingMode;
+  /** `?debug=1`: the pacing mode and "Save trace" in the connection details. */
+  debug: boolean;
+}
+
+const asPacing = (value: unknown): PacingMode | undefined => PACING_MODES.find((mode) => mode === value);
+
+/** Read once at startup; unknown values are ignored. The staging build defaults to flow (VITE_PACING). */
+export const switches: Switches = (() => {
+  const params = new URLSearchParams(location.search);
+  return { pacing: asPacing(params.get('pacing')) ?? asPacing(import.meta.env.VITE_PACING) ?? 'shadow', debug: params.get('debug') === '1' };
+})();
 
 export const mediaDevices: MediaDevicesPort = {
   getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
@@ -30,9 +49,16 @@ export function onNetworkChange(listener: () => void): Unsubscribe {
   };
 }
 
-/** The page URL without the fragment: base for invite/reply links. */
+/** The page URL without the fragment, keeping only the switches: base for room, invite and reply links. */
 export function pageBaseUrl(): string {
-  return `${location.origin}${location.pathname}`;
+  const params = new URLSearchParams(location.search);
+  const kept = new URLSearchParams();
+  for (const key of SWITCH_KEYS) {
+    const value = params.get(key);
+    if (value !== null) kept.set(key, value);
+  }
+  const query = kept.toString();
+  return `${location.origin}${location.pathname}${query ? `?${query}` : ''}`;
 }
 
 /** Removes the handshake from the address bar so a refresh doesn't replay it. */

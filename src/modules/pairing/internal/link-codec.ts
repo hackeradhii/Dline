@@ -30,6 +30,11 @@ export class LinkError extends Error {
   }
 }
 
+/** Why a link could not be used: a LinkError's reason, anything else counts as damaged. */
+export function linkErrorReason(error: unknown): LinkErrorReason {
+  return error instanceof LinkError ? error.reason : 'malformed';
+}
+
 export type Fragment = { kind: 'room'; code: string } | { kind: LinkKind; text: string } | null;
 
 const SDP_TYPE: Record<LinkKind, SdpType> = { o: 'offer', a: 'answer' };

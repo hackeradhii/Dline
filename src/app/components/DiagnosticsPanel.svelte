@@ -1,7 +1,10 @@
 <script lang="ts">
-  import type { ConnectionSnapshot } from '../../modules/diagnostics';
-  import { formatBitrate, formatBytes, formatMs } from '../../shared/format';
+  import { describeCandidate, type ConnectionSnapshot } from '../../modules/diagnostics';
+  import type { PacingStatus } from '../../modules/transfer';
+  import { formatBitrate, formatBytes, formatMs, NO_VALUE } from '../../shared/format';
+  import Button from '../../ui/Button.svelte';
   import Icon from '../../ui/Icon.svelte';
+  import { filePacingCopy, PACING_MODE_COPY } from '../copy';
 
   let {
     snapshot,
@@ -9,21 +12,39 @@
     rtt,
     lanes,
     safetyWords,
-  }: { snapshot: ConnectionSnapshot | null; mode: 'rendezvous' | 'link'; rtt: number | null; lanes: number; safetyWords: string[] | null } = $props();
+    pacing,
+    callActive,
+    debug,
+    onsavetrace,
+  }: {
+    snapshot: ConnectionSnapshot | null;
+    mode: 'rendezvous' | 'link';
+    rtt: number | null;
+    lanes: number;
+    safetyWords: string[] | null;
+    pacing: PacingStatus | null;
+    callActive: boolean;
+    /** `?debug=1`: show the pacing mode and offer the trace. */
+    debug: boolean;
+    onsavetrace: () => void;
+  } = $props();
 
   const path = $derived(snapshot?.path ?? null);
   const video = $derived(snapshot?.inboundVideo);
   const rows = $derived<Array<[string, string]>>([
     ['Pairing', mode === 'rendezvous' ? 'Room code (handshake via rendezvous)' : 'Links only (no server at all)'],
-    ['Your side', path ? `${path.local.type}, ${path.local.protocol.toUpperCase()}${path.local.address ? `, ${path.local.address}` : ''}` : '–'],
-    ['Their side', path ? `${path.remote.type}, ${path.remote.protocol.toUpperCase()}${path.remote.address ? `, ${path.remote.address}` : ''}` : '–'],
-    ['Round trip', formatMs(snapshot?.rttMs ?? rtt)],
-    ['File lanes', lanes > 1 ? `${lanes} parallel direct paths` : lanes === 1 ? '1 (the main connection)' : '–'],
+    ['Your side', path ? describeCandidate(path.local) : NO_VALUE],
+    ['Their side', path ? describeCandidate(path.remote) : NO_VALUE],
+    ['Round trip', formatMs(pacing?.pingMs ?? snapshot?.rttMs ?? rtt)],
+    ['Upload queue', formatMs(pacing?.queueMs ?? null)],
+    ['File pacing', pacing ? filePacingCopy(pacing.limit, callActive) : NO_VALUE],
+    ['File lanes', lanes > 1 ? `${lanes} parallel direct paths` : lanes === 1 ? '1 (the main connection)' : NO_VALUE],
     ['Sending', formatBitrate(snapshot?.sendBps ?? NaN)],
     ['Receiving', formatBitrate(snapshot?.receiveBps ?? NaN)],
-    ['Packet loss', snapshot?.lossPercent == null ? '–' : `${snapshot.lossPercent.toFixed(1)}%`],
+    ['Packet loss', snapshot?.lossPercent == null ? NO_VALUE : `${snapshot.lossPercent.toFixed(1)}%`],
     ['Their video', video?.width ? `${video.width}×${video.height}, ${Math.round(video.fps ?? 0)} fps, ${video.codec ?? '?'}` : 'Off'],
     ['Upload available', formatBitrate(snapshot?.availableOutgoingBps ?? NaN)],
+    ...(debug && pacing ? ([['Pacing mode', `${PACING_MODE_COPY[pacing.mode]}${pacing.flowInCharge ? ', in charge' : ''}`]] as Array<[string, string]>) : []),
   ]);
   const p2p = $derived(snapshot ? snapshot.relayedBytes === 0 && !path?.relayed : null);
 </script>
@@ -51,6 +72,10 @@
       </div>
     {/each}
   </dl>
+
+  {#if debug}
+    <Button variant="secondary" onclick={onsavetrace}>Save trace</Button>
+  {/if}
 
   {#if safetyWords}
     <section class="rounded-[14px] bg-band p-5 text-band-ink">

@@ -1,21 +1,32 @@
-import type { MediaDevicesPort } from '../../contracts/ports';
-import { CallController, type CallNotice, type CallState, type MediaFlags } from '../../modules/call';
-import { browserPeerFactory, LanePool, type Connection, type ConnectionPhase } from '../../modules/connection';
-import { safetyCode, StatsMonitor, type ConnectionSnapshot } from '../../modules/diagnostics';
-import { AdaptiveRateLimit, TransferManager, type TransferItem } from '../../modules/transfer';
+import type { CallController, CallNotice, CallState, MediaFlags } from '../../modules/call';
+import type { Connection, ConnectionPhase, LanePool } from '../../modules/connection';
+import { safetyCode, type ConnectionSnapshot, type StatsMonitor } from '../../modules/diagnostics';
+import type { AdaptiveRateLimit, PacingStatus, TransferItem, TransferManager } from '../../modules/transfer';
 import { Disposer } from '../../shared/emitter';
 
 const NO_MEDIA: MediaFlags = { audio: false, video: false };
 
+/** One connected session's modules, wired by the composition root (`Session`). */
+export interface RoomParts {
+  call: CallController;
+  files: TransferManager;
+  lanes: LanePool;
+  stats: StatsMonitor;
+  /** The legacy file budget, fed from each stats tick. */
+  legacyPacing: AdaptiveRateLimit;
+}
+
 /**
- * Reactive view of one connected session: composes the call, transfer and diagnostics modules on
- * top of the connection and mirrors their events into Svelte state. Holds no business rules itself.
+ * Reactive view of one connected session: mirrors the call, transfer and diagnostics modules'
+ * events into Svelte state, and hands each stats tick to the modules that use it.
  */
 export class RoomState {
   phase = $state<ConnectionPhase>('connected');
   rtt = $state<number | null>(null);
   snapshot = $state.raw<ConnectionSnapshot | null>(null);
   safetyWords = $state.raw<string[] | null>(null);
+  /** File pacing as of the last stats tick (PLAN.md §5.7). */
+  pacing = $state.raw<PacingStatus | null>(null);
 
   callState = $state<CallState>('idle');
   localStream = $state.raw<MediaStream | null>(null);
@@ -40,42 +51,50 @@ export class RoomState {
 
   constructor(
     readonly connection: Connection,
-    devices: MediaDevicesPort,
-    /** STUN only: extra lanes are direct paths or nothing. */
-    laneIceServers: RTCIceServer[],
+    { call, files, lanes, stats, legacyPacing }: RoomParts,
   ) {
-    this.call = new CallController(connection.control, connection, devices);
-    this.#stats = new StatsMonitor(connection);
-    const pacing = new AdaptiveRateLimit();
-    const { control } = connection;
-    this.#lanes = new LanePool({ control, main: connection, peers: browserPeerFactory, iceServers: laneIceServers, initiator: connection.role === 'host' });
-    this.files = new TransferManager({ control, lanes: this.#lanes, rateLimit: () => pacing.limit });
+    this.call = call;
+    this.files = files;
+    this.#lanes = lanes;
+    this.#stats = stats;
 
     const on = this.#disposer.add.bind(this.#disposer);
     on(connection.events.on('phase', (p) => (this.phase = p)));
     on(connection.events.on('rtt', (r) => (this.rtt = r)));
-    on(this.#lanes.events.on('count', (n) => (this.lanes = n)));
-    this.lanes = this.#lanes.lanes.length;
+    on(lanes.events.on('count', (n) => (this.lanes = n)));
+    this.lanes = lanes.lanes.length;
     on(
-      this.#stats.events.on('snapshot', (s) => {
+      stats.events.on('snapshot', (s) => {
         this.snapshot = s;
-        const sample = { callActive: this.call.state === 'active', rttMs: s.rttMs, lossPercent: s.lossPercent };
-        pacing.update(sample, this.files.uploadBytesPerSecond);
-        // Extra lanes only alongside a direct main path: if that needed a relay, a direct lane won't open either.
-        if (s.path && !s.path.relayed && this.phase === 'connected') this.#lanes.fit(s.rttMs);
+        const sample = { callActive: call.state === 'active', rttMs: s.rttMs, lossPercent: s.lossPercent };
+        legacyPacing.update(sample, files.uploadBytesPerSecond);
+        files.setFlowInputs({ mediaSendBps: s.mediaSendBps, pathKey: s.pairId, pathRttMs: s.rttMs });
+        this.pacing = files.pacing;
+        lanes.fit(s.rttMs, !!s.path && !s.path.relayed && this.phase === 'connected');
       }),
     );
-    on(this.call.events.on('state', (s) => (this.callState = s)));
-    on(this.call.events.on('localStream', (s) => (this.localStream = s)));
-    on(this.call.events.on('remoteStream', (s) => (this.remoteStream = s)));
-    on(this.call.events.on('localMedia', (m) => (this.localMedia = m)));
-    on(this.call.events.on('remoteMedia', (m) => (this.remoteMedia = m)));
-    on(this.call.events.on('notice', (n) => (this.callNotice = n)));
-    on(this.files.events.on('changed', (item) => this.#onTransfer(item)));
+    // The call reaches file pacing the moment it changes, not a stats tick later (FLOW-06).
+    on(
+      call.events.on('state', (s) => {
+        this.callState = s;
+        files.setFlowInputs({ callActive: s === 'active' });
+      }),
+    );
+    on(call.events.on('localStream', (s) => (this.localStream = s)));
+    on(call.events.on('remoteStream', (s) => (this.remoteStream = s)));
+    on(
+      call.events.on('localMedia', (m) => {
+        this.localMedia = m;
+        files.setFlowInputs({ videoOn: m.video });
+      }),
+    );
+    on(call.events.on('remoteMedia', (m) => (this.remoteMedia = m)));
+    on(call.events.on('notice', (n) => (this.callNotice = n)));
+    on(files.events.on('changed', (item) => this.#onTransfer(item)));
 
-    this.#stats.start();
+    stats.start();
     void this.#loadSafetyCode();
-    void this.call.cameraCount.then((n) => (this.cameraCount = n));
+    void call.cameraCount.then((n) => (this.cameraCount = n));
   }
 
   /** True while something would be lost by closing the tab. */

@@ -5,6 +5,7 @@
   import Icon from '../../ui/Icon.svelte';
   import Progress from '../../ui/Progress.svelte';
   import { saveFile } from '../browser';
+  import { TRANSFER_ERROR_COPY } from '../copy';
   import { fileTypeLabel, isRunnableFile } from '../view';
 
   /** One file as a stop on the line: its marker shows where it stands, the text says exactly. */
@@ -41,7 +42,7 @@
       case 'cancelled':
         return 'Cancelled';
       default:
-        return item.error ?? 'Failed';
+        return item.error ? TRANSFER_ERROR_COPY[item.error] : 'Failed';
     }
   });
 </script>

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { STATS } from '../../../shared/config';
 import { parseCandidate, type ParsedCandidate } from '../../../shared/net';
+import { FakeClock } from '../../../shared/testing/fake-clock';
 import { analyzeCandidates, diagnoseNoPath } from './network-analysis';
 import { classifyPath, describePath } from './path';
 import { safetyCode } from './safety-code';
+import { StatsMonitor, type ConnectionSnapshot } from './stats-monitor';
 import { parseStats } from './stats-parser';
 import { WORDS } from './wordlist';
 
@@ -83,6 +86,40 @@ describe('stats parsing', () => {
       ['R', { id: 'R', type: 'remote-candidate', candidateType: 'srflx', address: '203.0.113.7' }],
     ]);
     expect(parseStats(report as unknown as RTCStatsReport).path?.relayed).toBe(true);
+  });
+
+  it('adds up what the call sends, audio and video, and names the selected pair', () => {
+    const report = new Map<string, Record<string, unknown>>([
+      ['T', { id: 'T', type: 'transport', selectedCandidatePairId: 'P' }],
+      ['P', { id: 'P', type: 'candidate-pair', localCandidateId: 'L', remoteCandidateId: 'R' }],
+      ['A', { id: 'A', type: 'outbound-rtp', kind: 'audio', bytesSent: 4_000 }],
+      ['V', { id: 'V', type: 'outbound-rtp', kind: 'video', bytesSent: 96_000 }],
+      ['I', { id: 'I', type: 'inbound-rtp', kind: 'video', bytesReceived: 50_000 }],
+    ]);
+    expect(parseStats(report as unknown as RTCStatsReport)).toMatchObject({ pairId: 'P', mediaBytesSent: 100_000 });
+    expect(parseStats(new Map() as unknown as RTCStatsReport)).toMatchObject({ pairId: null, mediaBytesSent: 0 });
+  });
+});
+
+describe('stats monitor', () => {
+  it('turns what the call sent into bits per second', async () => {
+    const report = (at: number, bytesSent: number) =>
+      new Map<string, Record<string, unknown>>([
+        ['P', { id: 'P', type: 'candidate-pair', selected: true, timestamp: at }],
+        ['V', { id: 'V', type: 'outbound-rtp', kind: 'video', bytesSent }],
+      ]) as unknown as RTCStatsReport;
+    const reports = [report(1_000, 50_000), report(2_000, 362_500)];
+    const clock = new FakeClock();
+    const monitor = new StatsMonitor({ getStats: async () => reports.shift()! }, clock);
+    const snapshots: ConnectionSnapshot[] = [];
+    monitor.events.on('snapshot', (s) => snapshots.push(s));
+    const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+    monitor.start();
+    await settle();
+    clock.advance(STATS.intervalMs);
+    await settle();
+    monitor.stop();
+    expect(snapshots.map((s) => s.mediaSendBps)).toEqual([0, 2_500_000]);
   });
 });
 

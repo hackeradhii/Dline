@@ -25,7 +25,8 @@
 </script>
 
 <script lang="ts">
-  let { name, size = 22, label }: { name: IconName; size?: number; label?: string } = $props();
+  /** Decorative only: the control or text next to it carries the meaning. */
+  let { name, size = 22 }: { name: IconName; size?: number } = $props();
 </script>
 
 <svg
@@ -37,9 +38,7 @@
   stroke-width="1.8"
   stroke-linecap="round"
   stroke-linejoin="round"
-  role={label ? 'img' : undefined}
-  aria-label={label}
-  aria-hidden={label ? undefined : 'true'}
+  aria-hidden="true"
 >
   <path d={PATHS[name]} />
 </svg>

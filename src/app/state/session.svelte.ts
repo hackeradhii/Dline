@@ -1,12 +1,13 @@
 import { createRoomCode } from '../../contracts/room';
 import type { ServerErrorCode } from '../../contracts/signaling';
-import { Connection, type FailureReason } from '../../modules/connection';
-import { diagnoseNoPath, probeNetwork, remoteProfile, type NetworkProfile, type NoPathCause } from '../../modules/diagnostics';
+import { CallController } from '../../modules/call';
+import { browserPeerFactory, Connection, LanePool, type FailureReason } from '../../modules/connection';
+import { diagnoseNoPath, probeNetwork, remoteProfile, StatsMonitor, type NetworkProfile, type NoPathCause } from '../../modules/diagnostics';
 import {
   createReply,
   deliverReply,
   HostLinkPairing,
-  LinkError,
+  linkErrorReason,
   linkUrl,
   listenForReplies,
   parseFragment,
@@ -15,10 +16,10 @@ import {
   type LinkErrorReason,
 } from '../../modules/pairing';
 import { DEFAULT_TURN, directIceServers, iceServersFor, safeLocalStore, TurnSettings, type TurnConfig } from '../../modules/settings';
-import { clearIncomingFiles } from '../../modules/transfer';
+import { AdaptiveRateLimit, clearIncomingFiles, TransferManager } from '../../modules/transfer';
 import { Disposer } from '../../shared/emitter';
-import { clearFragment, KeepAwake, mediaDevices, onNetworkChange, pageBaseUrl, pageVisibility } from '../browser';
-import { RoomState } from './room.svelte';
+import { clearFragment, KeepAwake, mediaDevices, onNetworkChange, pageBaseUrl, pageVisibility, switches } from '../browser';
+import { RoomState, type RoomParts } from './room.svelte';
 
 export type Screen =
   | { name: 'home' }
@@ -114,7 +115,7 @@ export class Session {
       this.linkError = null;
       return true;
     } catch (error) {
-      this.linkError = error instanceof LinkError ? error.reason : 'malformed';
+      this.linkError = linkErrorReason(error);
       return false;
     }
   }
@@ -135,7 +136,7 @@ export class Session {
       const { url } = await createReply(connection, fragment.text, pageBaseUrl());
       this.screen = { name: 'link-reply', url };
     } catch (error) {
-      this.linkError = error instanceof LinkError ? error.reason : 'malformed';
+      this.linkError = linkErrorReason(error);
       this.leave();
     }
   }
@@ -174,7 +175,7 @@ export class Session {
       const delivered = await deliverReply(await peekSession('a', text), `a.${text}`);
       this.screen = { name: 'handoff', delivered, reply };
     } catch (error) {
-      this.linkError = error instanceof LinkError ? error.reason : 'malformed';
+      this.linkError = linkErrorReason(error);
       this.screen = { name: 'home' };
     }
   }
@@ -208,9 +209,21 @@ export class Session {
 
   #enterRoom(connection: Connection): void {
     if (this.room) return;
-    this.room = new RoomState(connection, mediaDevices, directIceServers());
+    this.room = new RoomState(connection, this.#roomParts(connection));
     this.screen = { name: 'room' };
     this.#awake.set(true);
+  }
+
+  /** One room's modules, on top of its connection. */
+  #roomParts(connection: Connection): RoomParts {
+    const { control } = connection;
+    const call = new CallController(control, connection, mediaDevices);
+    const stats = new StatsMonitor(connection);
+    const legacyPacing = new AdaptiveRateLimit();
+    // STUN only: extra lanes are direct paths or nothing.
+    const lanes = new LanePool({ control, main: connection, peers: browserPeerFactory, iceServers: directIceServers(), initiator: connection.role === 'host' });
+    const files = new TransferManager({ control, lanes, legacy: legacyPacing, pacing: switches.pacing, visibility: pageVisibility });
+    return { call, files, lanes, stats, legacyPacing };
   }
 
   #onFailure(connection: Connection, reason: FailureReason): void {

@@ -14,10 +14,14 @@ export interface VideoInfo {
 export interface StatsSample {
   timestamp: number;
   path: PathInfo | null;
+  /** Opaque id of the selected candidate pair: it changes when the path does. */
+  pairId: string | null;
   rttMs: number | null;
   availableOutgoingBps: number | null;
   bytesSent: number;
   bytesReceived: number;
+  /** Audio and video bytes sent so far (outbound RTP). */
+  mediaBytesSent: number;
   packetsLost: number;
   packetsReceived: number;
   inboundVideo: VideoInfo | null;
@@ -78,10 +82,12 @@ export function parseStats(report: RTCStatsReport): StatsSample {
   return {
     timestamp: num(pair?.timestamp) ?? Date.now(),
     path: local && remote ? classifyPath(local, remote) : null,
+    pairId: pair?.id ?? null,
     rttMs: rtt === null ? null : rtt * 1000,
     availableOutgoingBps: outgoing,
     bytesSent: num(pair?.bytesSent) ?? 0,
     bytesReceived: num(pair?.bytesReceived) ?? 0,
+    mediaBytesSent: stats.filter((s) => s.type === 'outbound-rtp').reduce((sum, s) => sum + (num(s.bytesSent) ?? 0), 0),
     packetsLost: inbound.reduce((sum, s) => sum + (num(s.packetsLost) ?? 0), 0),
     packetsReceived: inbound.reduce((sum, s) => sum + (num(s.packetsReceived) ?? 0), 0),
     inboundVideo: video(inbound.find((s) => s.kind === 'video'), byId),

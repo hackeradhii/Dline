@@ -39,6 +39,11 @@ export const PATH_LABEL: Record<PathKind, string> = {
   relay: 'Relayed, not peer-to-peer',
 };
 
+/** One side of the path for the connection details: type, protocol and, when it isn't hidden, the address. */
+export function describeCandidate(c: CandidateInfo): string {
+  return `${c.type}, ${c.protocol.toUpperCase()}${c.address ? `, ${c.address}` : ''}`;
+}
+
 export function describePath(path: PathInfo): string {
   const family = path.family === 'IPv4' || path.family === 'IPv6' ? ` (${path.family})` : '';
   return path.kind === 'relay' ? PATH_LABEL.relay : `${PATH_LABEL[path.kind]}${family}`;

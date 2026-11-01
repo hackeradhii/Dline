@@ -16,6 +16,12 @@ export const systemClock: Clock = {
   clearInterval: (h) => globalThis.clearInterval(h as ReturnType<typeof setInterval>),
 };
 
+/**
+ * `performance.now()`: never jumps, where `Date.now()` can (a jump would look like seconds of
+ * queue). Only the flow-control timing uses it; records and timeouts keep `systemClock`.
+ */
+export const monotonicClock: Clock = { ...systemClock, now: () => performance.now() };
+
 export interface Visibility {
   isVisible(): boolean;
   onChange(listener: (visible: boolean) => void): () => void;
@@ -25,6 +31,30 @@ export const alwaysVisible: Visibility = {
   isVisible: () => true,
   onChange: () => () => undefined,
 };
+
+/** At most one pending timeout: `set` replaces it, `clear` cancels it (DRY for every one-shot timer). */
+export class Timeout {
+  #handle: unknown = null;
+
+  constructor(private readonly clock: Clock = systemClock) {}
+
+  get pending(): boolean {
+    return this.#handle !== null;
+  }
+
+  set(fn: () => void, ms: number): void {
+    this.clear();
+    this.#handle = this.clock.setTimeout(() => {
+      this.#handle = null;
+      fn();
+    }, ms);
+  }
+
+  clear(): void {
+    if (this.#handle !== null) this.clock.clearTimeout(this.#handle);
+    this.#handle = null;
+  }
+}
 
 /**
  * A one-shot timer that only counts down while the page is visible.
@@ -40,7 +70,7 @@ export class VisibleTimer {
     ms: number,
     private readonly onFire: () => void,
     private readonly clock: Clock = systemClock,
-    private readonly visibility: Visibility = alwaysVisible,
+    visibility: Visibility = alwaysVisible,
   ) {
     this.#remaining = ms;
     this.#unsubscribe = visibility.onChange((visible) => (visible ? this.#resume() : this.#pause()));

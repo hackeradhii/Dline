@@ -23,7 +23,7 @@ export default defineConfig({
         icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg}', '**/onest-latin-wght-*.woff2'],
+        globPatterns: ['**/*.{js,css,html,svg}', '**/overpass-latin-wght-*.woff2'],
         // The signaling socket must always reach the Worker, never the cache.
         navigateFallbackDenylist: [/^\/ws\//],
         cleanupOutdatedCaches: true,

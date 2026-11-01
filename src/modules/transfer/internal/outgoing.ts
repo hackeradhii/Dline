@@ -23,8 +23,10 @@ export class OutgoingFile {
   #acked = 0;
   #ackedBytes = 0;
   #inFlightBytes = 0;
+  #inFlightBlocks = 0;
   #started = false;
-  #lastProgressAt: number;
+  /** Waiting on the receiver since: set while blocks are in flight, reset by every ack (FLOW-02). */
+  #waitingSince: number | null = null;
 
   constructor(
     readonly id: string,
@@ -35,7 +37,6 @@ export class OutgoingFile {
   ) {
     this.blockCount = Math.ceil(file.size / blockBytes);
     this.#state = new Uint8Array(this.blockCount);
-    this.#lastProgressAt = clock.now();
   }
 
   get offer(): FileOffer {
@@ -59,14 +60,17 @@ export class OutgoingFile {
     return this.#inFlightBytes;
   }
 
-  /** Time since the receiver last confirmed anything, while blocks are waiting on it. */
+  /**
+   * Time since the receiver last confirmed anything, while blocks are in flight to it. Waiting
+   * behind the pacer or the in-flight window doesn't count: a file queued behind slow, paced
+   * sending is not stuck.
+   */
   get stalledMs(): number {
-    return this.#started && !this.complete ? this.clock.now() - this.#lastProgressAt : 0;
+    return this.#waitingSince === null ? 0 : this.clock.now() - this.#waitingSince;
   }
 
   start(): void {
     this.#started = true;
-    this.#lastProgressAt = this.clock.now();
     this.record.update({ status: 'transferring' });
   }
 
@@ -112,12 +116,13 @@ export class OutgoingFile {
     this.#laneOf.set(index, laneId);
     this.#sentAt.set(index, this.clock.now());
     this.#inFlightBytes += this.#length(index);
+    if (this.#inFlightBlocks++ === 0) this.#waitingSince = this.clock.now();
   }
 
   /** Gives a block back to be sent again: it was never sent, or its lane closed before the ack. */
   requeue(index: number): void {
     if (this.#state[index] === ACKED) return;
-    if (this.#state[index] === IN_FLIGHT) this.#inFlightBytes -= this.#length(index);
+    if (this.#state[index] === IN_FLIGHT) this.#leaveFlight(index);
     this.#state[index] = UNSENT;
     this.#forget(index);
     this.#retry.push(index);
@@ -131,15 +136,20 @@ export class OutgoingFile {
   ack(index: number): number | null {
     if (index >= this.blockCount || this.#state[index] === ACKED) return null;
     const sentAt = this.#sentAt.get(index);
-    if (this.#state[index] === IN_FLIGHT) this.#inFlightBytes -= this.#length(index);
+    if (this.#state[index] === IN_FLIGHT) this.#leaveFlight(index);
     this.#state[index] = ACKED;
     this.#forget(index);
     this.#acked++;
     this.#ackedBytes += this.#length(index);
-    this.#lastProgressAt = this.clock.now();
+    if (this.#waitingSince !== null) this.#waitingSince = this.clock.now(); // Progress: the clock starts over.
     this.record.progress(this.#ackedBytes);
     if (this.complete) this.record.update({ status: 'verifying' });
     return sentAt === undefined ? null : this.clock.now() - sentAt;
+  }
+
+  #leaveFlight(index: number): void {
+    this.#inFlightBytes -= this.#length(index);
+    if (--this.#inFlightBlocks === 0) this.#waitingSince = null;
   }
 
   #forget(index: number): void {

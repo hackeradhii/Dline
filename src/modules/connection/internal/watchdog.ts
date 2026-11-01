@@ -1,5 +1,5 @@
 import { CONNECTION } from '../../../shared/config';
-import { systemClock, type Clock } from '../../../shared/timer';
+import { systemClock, Timeout, type Clock } from '../../../shared/timer';
 
 export interface WatchdogActions {
   /** Try an ICE restart (the path may come back, e.g. after Wi-Fi → mobile). */
@@ -13,44 +13,35 @@ export interface WatchdogActions {
  * disconnected/failed for 5 s → ICE restart; still not connected after 15 s → lost.
  */
 export class Watchdog {
-  #restartTimer: unknown = null;
-  #lostTimer: unknown = null;
+  readonly #restart: Timeout;
+  readonly #lost: Timeout;
 
   constructor(
     private readonly actions: WatchdogActions,
-    private readonly clock: Clock = systemClock,
-  ) {}
+    clock: Clock = systemClock,
+  ) {
+    this.#restart = new Timeout(clock);
+    this.#lost = new Timeout(clock);
+  }
 
   onState(state: RTCPeerConnectionState): void {
     if (state === 'connected') return this.#clear();
     if (state !== 'disconnected' && state !== 'failed') return;
     if (state === 'failed') {
-      this.#cancelRestart();
+      this.#restart.clear();
       this.actions.restart();
-    } else {
-      this.#restartTimer ??= this.clock.setTimeout(() => {
-        this.#restartTimer = null;
-        this.actions.restart();
-      }, CONNECTION.restartAfterMs);
+    } else if (!this.#restart.pending) {
+      this.#restart.set(() => this.actions.restart(), CONNECTION.restartAfterMs);
     }
-    this.#lostTimer ??= this.clock.setTimeout(() => {
-      this.#lostTimer = null;
-      this.actions.lost();
-    }, CONNECTION.lostAfterMs);
+    if (!this.#lost.pending) this.#lost.set(() => this.actions.lost(), CONNECTION.lostAfterMs);
   }
 
   stop(): void {
     this.#clear();
   }
 
-  #cancelRestart(): void {
-    if (this.#restartTimer !== null) this.clock.clearTimeout(this.#restartTimer);
-    this.#restartTimer = null;
-  }
-
   #clear(): void {
-    this.#cancelRestart();
-    if (this.#lostTimer !== null) this.clock.clearTimeout(this.#lostTimer);
-    this.#lostTimer = null;
+    this.#restart.clear();
+    this.#lost.clear();
   }
 }

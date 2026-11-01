@@ -2,8 +2,11 @@
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
+/** Shown wherever a value isn't known (yet). */
+export const NO_VALUE = '–';
+
 export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '–';
+  if (!Number.isFinite(bytes) || bytes < 0) return NO_VALUE;
   let value = bytes;
   let unit = 0;
   while (value >= 1024 && unit < UNITS.length - 1) {
@@ -19,13 +22,13 @@ export function formatSpeed(bytesPerSecond: number): string {
 }
 
 export function formatBitrate(bitsPerSecond: number): string {
-  if (!Number.isFinite(bitsPerSecond) || bitsPerSecond < 0) return '–';
+  if (!Number.isFinite(bitsPerSecond) || bitsPerSecond < 0) return NO_VALUE;
   if (bitsPerSecond >= 1e6) return `${(bitsPerSecond / 1e6).toFixed(1)} Mbps`;
   return `${Math.round(bitsPerSecond / 1e3)} kbps`;
 }
 
 export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '–';
+  if (!Number.isFinite(ms) || ms < 0) return NO_VALUE;
   if (ms < 1000) return `${Math.round(ms)} ms`;
   if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
   const s = Math.round(ms / 1000);
@@ -36,6 +39,6 @@ export function formatDuration(ms: number): string {
 }
 
 export function formatMs(ms: number | null): string {
-  if (ms === null || !Number.isFinite(ms)) return '–';
+  if (ms === null || !Number.isFinite(ms)) return NO_VALUE;
   return ms < 0.5 ? '<1 ms' : `${Math.round(ms)} ms`;
 }

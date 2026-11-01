@@ -6,15 +6,21 @@ playwright-report/
 test-results/
 *.log
 
-# Third-party agent skills: reinstall with `npx skills` from skills-lock.json. Dline's own skill is kept.
+# Agent and tool folders: skills, design-tool state, code-navigation caches. Local only.
 .agents/
 .aider-desk/
-.claude/*
-!.claude/skills/
-.claude/skills/*
-!.claude/skills/dline-realtime/
+.claude/
+.impeccable/
+.serena/
+skills-lock.json
 
-# Impeccable's local state. Review screenshots show real IP addresses in the connection details.
-.impeccable/review/
-.impeccable/questions/
-.impeccable/*.local.json
+# Working documents: product/design notes and the speed plan with its review log. Local only.
+DESIGN.md
+PRODUCT.md
+Dline PRD.md
+Dline TRD.md
+PLAN.md
+PLAN-REVIEW-LOG.md
+
+# Screenshots can show camera images and real IP addresses.
+/Screenshot*.png

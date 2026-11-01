@@ -2,7 +2,7 @@ import type { LaneSignal } from '../../../contracts/lanes';
 import type { ChannelFactory, ControlChannel, Lane, LaneSource, PeerFactory } from '../../../contracts/ports';
 import { LANES } from '../../../shared/config';
 import { Disposer, Emitter, type Unsubscribe } from '../../../shared/emitter';
-import { systemClock, type Clock } from '../../../shared/timer';
+import { systemClock, Timeout, type Clock } from '../../../shared/timer';
 import { chunkSize } from './sctp';
 
 /** Label of the bulk-data channel on every lane. */
@@ -33,7 +33,8 @@ interface Extra {
   pc: RTCPeerConnection;
   channel: RTCDataChannel;
   lane: Lane | null;
-  timer: unknown;
+  /** Drops the lane if it does not open (or come back) in time. */
+  timer: Timeout;
 }
 
 type Description = Extract<LaneSignal, { t: 'lane-sdp' }>['d'];
@@ -81,8 +82,11 @@ export class LanePool implements LaneSource {
   /**
    * Host only: size the pool for the path, given a fresh round-trip sample. Uses the lowest RTT seen,
    * i.e. the path's real distance: under load, queues inflate RTT on any path, even on a LAN.
+   * Extra lanes only alongside a direct, connected main path: if that needed a relay, a direct lane
+   * won't open either.
    */
-  fit(rttMs: number | null): void {
+  fit(rttMs: number | null, mainDirect: boolean): void {
+    if (!mainDirect) return;
     if (rttMs !== null) this.#baseRttMs = Math.min(this.#baseRttMs ?? rttMs, rttMs);
     this.grow(extraLanesFor(this.#baseRttMs));
   }
@@ -143,7 +147,7 @@ export class LanePool implements LaneSource {
     const pc = this.options.peers.create({ iceServers: this.options.iceServers });
     const channel = pc.createDataChannel(BULK_LABEL, { negotiated: true, id: 0, ordered: true });
     channel.binaryType = 'arraybuffer';
-    const extra: Extra = { pc, channel, lane: null, timer: null };
+    const extra: Extra = { pc, channel, lane: null, timer: new Timeout(this.#clock) };
     this.#extras.set(n, extra);
     this.#arm(n, extra, LANES.openTimeoutMs);
     pc.addEventListener('icecandidate', ({ candidate }) => {
@@ -151,7 +155,7 @@ export class LanePool implements LaneSource {
     });
     pc.addEventListener('connectionstatechange', () => this.#onState(n, extra));
     channel.addEventListener('open', () => {
-      this.#disarm(extra);
+      extra.timer.clear();
       extra.lane = { id: n, channel, chunkBytes: chunkSize(pc.sctp, LANES.chunkBytes) };
       this.#add(extra.lane);
     });
@@ -164,24 +168,18 @@ export class LanePool implements LaneSource {
     const state = extra.pc.connectionState;
     if (state === 'failed' || state === 'closed') this.#drop(n, true);
     else if (state === 'disconnected') this.#arm(n, extra, LANES.disconnectGraceMs);
-    else if (state === 'connected' && extra.lane) this.#disarm(extra);
+    else if (state === 'connected' && extra.lane) extra.timer.clear();
   }
 
   #arm(n: number, extra: Extra, ms: number): void {
-    this.#disarm(extra);
-    extra.timer = this.#clock.setTimeout(() => this.#drop(n, true), ms);
-  }
-
-  #disarm(extra: Extra): void {
-    if (extra.timer !== null) this.#clock.clearTimeout(extra.timer);
-    extra.timer = null;
+    extra.timer.set(() => this.#drop(n, true), ms);
   }
 
   #drop(n: number, tell: boolean): void {
     const extra = this.#extras.get(n);
     if (!extra) return;
     this.#extras.delete(n);
-    this.#disarm(extra);
+    extra.timer.clear();
     if (tell) {
       this.#droppedAt = this.#clock.now();
       this.#signal({ t: 'lane-close', n });

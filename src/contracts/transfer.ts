@@ -12,7 +12,8 @@ import { TRANSFER } from '../shared/config';
  *   either side         file-cancel
  *
  * Data, on any lane: a block header (JSON text), then exactly `n` bytes (binary). Every block carries
- * its own SHA-256, so blocks can travel over parallel lanes and arrive in any order.
+ * its own SHA-256, so blocks can travel over parallel lanes and arrive in any order. Between blocks,
+ * and only to a peer that answers flow probes, a lane may carry a drain marker (`mark`, JSON text).
  */
 
 const FileId = v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{8,32}$/));
@@ -46,3 +47,10 @@ export const BlockHeaderSchema = v.object({
   h: Sha256Hex,
 });
 export type BlockHeader = v.InferOutput<typeof BlockHeaderSchema>;
+
+/** Everything before this marker on its lane has arrived; answered with `flow-mark` (PLAN.md §5.3 rule 6). */
+export const LaneMarkSchema = v.object({ t: v.literal('mark'), m: nonNegativeInt });
+export type LaneMark = v.InferOutput<typeof LaneMarkSchema>;
+
+/** Text messages on a lane, between blocks. */
+export const LaneTextSchema = v.variant('t', [BlockHeaderSchema, LaneMarkSchema]);

@@ -1,7 +1,7 @@
 import type { MediaDevicesPort } from '../../../contracts/ports';
 import { MEDIA } from '../../../shared/config';
 
-export type Facing = 'user' | 'environment';
+type Facing = 'user' | 'environment';
 export type MediaFailure = 'denied' | 'unavailable';
 
 export class MediaError extends Error {
@@ -27,10 +27,6 @@ export class LocalMedia {
 
   get video(): MediaStreamTrack | null {
     return this.#video;
-  }
-
-  get facing(): Facing {
-    return this.#facing;
   }
 
   /** A fresh stream object each time, so <video> elements reliably pick up track changes (Safari). */

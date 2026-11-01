@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { FlowControlSchema } from './flow';
 import { LaneSignalSchema } from './lanes';
 import { nonNegativeInt } from './parse';
 import { SignalSchema } from './signaling';
@@ -12,6 +13,7 @@ export const ControlSchema = v.union([
   SignalSchema,
   LaneSignalSchema,
   TransferControlSchema,
+  FlowControlSchema,
   v.variant('t', [
     v.object({ t: v.literal('ping'), ts: nonNegativeInt }),
     v.object({ t: v.literal('pong'), ts: nonNegativeInt }),

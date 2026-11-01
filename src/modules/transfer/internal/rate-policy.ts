@@ -1,4 +1,12 @@
-import { TRANSFER } from '../../../shared/config';
+import { FLOW, TRANSFER } from '../../../shared/config';
+
+/**
+ * A file upload budget (PLAN.md §5.6): bytes/second, null for none, or 0 to hold. Every policy
+ * passes one shared contract test (Liskov).
+ */
+export interface RatePolicy {
+  readonly limit: number | null;
+}
 
 /** What the call side reports once per stats tick. */
 export interface CongestionSample {
@@ -9,7 +17,8 @@ export interface CongestionSample {
 }
 
 /**
- * Keeps file transfers from hurting the video call, without capping them needlessly.
+ * The legacy policy: keeps file transfers from hurting the video call, without capping them
+ * needlessly.
  *
  * Neither the browser's bandwidth estimate nor "quality limited by bandwidth" can size a file cap:
  * both describe the media's own ramp-up and are routinely "limited" at the start of every call.
@@ -17,7 +26,7 @@ export interface CongestionSample {
  * growing round trip and as loss. So: AIMD on those signals (back off fast, ramp back quickly),
  * and no limit at all when there is no call.
  */
-export class AdaptiveRateLimit {
+export class AdaptiveRateLimit implements RatePolicy {
   #limit: number | null = null;
   #baseRttMs = Infinity;
 
@@ -41,7 +50,7 @@ export class AdaptiveRateLimit {
       this.#limit = Math.max(TRANSFER.minFileBytesPerSecond, current * TRANSFER.backoffFactor);
     } else if (this.#limit !== null) {
       const next = this.#limit * TRANSFER.rampFactor;
-      this.#limit = next >= TRANSFER.unlimitedAboveBytesPerSecond ? null : next;
+      this.#limit = next >= FLOW.unlimitedAboveBytesPerSecond ? null : next;
     }
   }
 }

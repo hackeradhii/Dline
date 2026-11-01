@@ -7,6 +7,8 @@ import { parseStats, type StatsSample } from './stats-parser';
 export interface ConnectionSnapshot extends StatsSample {
   sendBps: number;
   receiveBps: number;
+  /** Audio + video send rate, bits/s. */
+  mediaSendBps: number;
   lossPercent: number | null;
   /** Cumulative bytes that went through a TURN relay this session. 0 = fully peer-to-peer. */
   relayedBytes: number;
@@ -16,7 +18,6 @@ export interface ConnectionSnapshot extends StatsSample {
 export class StatsMonitor {
   readonly events = new Emitter<{ snapshot: ConnectionSnapshot }>();
   #previous: StatsSample | null = null;
-  #latest: ConnectionSnapshot | null = null;
   #relayedBytes = 0;
   #handle: unknown = null;
   #busy = false;
@@ -25,10 +26,6 @@ export class StatsMonitor {
     private readonly source: StatsSource,
     private readonly clock: Clock = systemClock,
   ) {}
-
-  get latest(): ConnectionSnapshot | null {
-    return this.#latest;
-  }
 
   start(): void {
     if (this.#handle !== null) return;
@@ -65,13 +62,13 @@ export class StatsMonitor {
     const lost = sample.packetsLost - (prev?.packetsLost ?? 0);
     const received = sample.packetsReceived - (prev?.packetsReceived ?? 0);
     this.#previous = sample;
-    this.#latest = {
+    this.events.emit('snapshot', {
       ...sample,
       sendBps: rate(sample.bytesSent, prev?.bytesSent),
       receiveBps: rate(sample.bytesReceived, prev?.bytesReceived),
+      mediaSendBps: rate(sample.mediaBytesSent, prev?.mediaBytesSent),
       lossPercent: lost + received > 0 ? (100 * Math.max(0, lost)) / (lost + received) : null,
       relayedBytes: this.#relayedBytes,
-    };
-    this.events.emit('snapshot', this.#latest);
+    });
   }
 }

@@ -1,8 +1,24 @@
+import { TRANSFER } from '../../../shared/config';
 import { systemClock, type Clock } from '../../../shared/timer';
 import { SpeedMeter } from './flow';
 
 export type TransferDirection = 'out' | 'in';
 export type TransferStatus = 'queued' | 'transferring' | 'verifying' | 'done' | 'failed' | 'cancelled';
+
+/** Why a file failed; the app words it (`TRANSFER_ERROR_COPY`). */
+export type TransferError =
+  /** Sending: the file could not be read (e.g. deleted after it was picked). */
+  | 'unreadable'
+  /** Sending: the receiver's check found it damaged. */
+  | 'arrived-damaged'
+  /** Sending: nothing acknowledged for too long, or no lane to send on. */
+  | 'no-response'
+  /** Receiving: a block that does not fit the file. */
+  | 'bad-block'
+  /** Receiving: the SHA-256 did not match. */
+  | 'damaged'
+  /** Receiving: the file could not be written. */
+  | 'unsaved';
 
 export interface TransferItem {
   id: string;
@@ -18,14 +34,13 @@ export interface TransferItem {
   verified: boolean | null;
   /** The received file (incoming, once complete). */
   file: Blob | null;
-  error: string | null;
+  error: TransferError | null;
   /** When bytes started flowing (ms timestamp), or null while queued. */
   startedAt: number | null;
   /** Real time taken so far; once finished, the total from first byte to verified. */
   elapsedMs: number;
 }
 
-const PROGRESS_EMIT_MS = 150;
 const FINAL: readonly TransferStatus[] = ['done', 'failed', 'cancelled'];
 
 /** Progress bookkeeping shared by sender and receiver (DRY): speed, ETA, throttled change events. */
@@ -59,7 +74,7 @@ export class TransferRecord {
     this.#item.etaMs = this.#meter.etaMs(this.#item.size - bytes);
     this.#tick();
     const now = this.clock.now();
-    if (now - this.#lastEmit >= PROGRESS_EMIT_MS || bytes === this.#item.size) {
+    if (now - this.#lastEmit >= TRANSFER.progressEmitMs || bytes === this.#item.size) {
       this.#lastEmit = now;
       this.emit({ ...this.#item });
     }

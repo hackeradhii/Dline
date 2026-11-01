@@ -5,6 +5,7 @@ import { InboundSchema, JOIN_PARAMS, type Role, type ServerErrorCode, type Signa
 import { backoffMs } from '../../../shared/async';
 import { SIGNALING } from '../../../shared/config';
 import { Emitter, type Unsubscribe } from '../../../shared/emitter';
+import { Timeout } from '../../../shared/timer';
 
 export type SocketState = 'connecting' | 'open' | 'closed';
 
@@ -40,7 +41,7 @@ export class RendezvousSignaler implements Signaler {
   #token: string | null = null;
   #attempt = 0;
   #closed = false;
-  #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly #retry = new Timeout();
   readonly #offNetwork: Unsubscribe;
   readonly #WebSocket: typeof WebSocket;
 
@@ -83,7 +84,7 @@ export class RendezvousSignaler implements Signaler {
 
   close(): void {
     this.#closed = true;
-    clearTimeout(this.#retryTimer);
+    this.#retry.clear();
     this.#offNetwork();
     this.#ws?.close(1000);
     this.#ws = null;
@@ -113,12 +114,12 @@ export class RendezvousSignaler implements Signaler {
     this.events.emit('socket', 'closed');
     if (this.#closed) return;
     const delay = backoffMs(this.#attempt++, SIGNALING.reconnectBaseMs, SIGNALING.reconnectMaxMs);
-    this.#retryTimer = setTimeout(() => this.connect(), delay);
+    this.#retry.set(() => this.connect(), delay);
   }
 
   #reconnectNow(): void {
     if (this.#closed) return;
-    clearTimeout(this.#retryTimer);
+    this.#retry.clear();
     if (this.#ws && this.#ws.readyState !== this.#WebSocket.OPEN) return;
     this.#ws?.close();
     this.#ws = null;
