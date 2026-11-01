@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="590" viewBox="0 0 1280 590" role="img" aria-labelledby="title desc">
+  <title id="title">Files over lanes against one connection</title>
+  <desc id="desc">Speed-up from Dline lanes on emulated paths: 2.1 times on the same network, 5.2 and 8.5 times mobile to broadband, 8.5 and 9.7 times on a far path, 15 times on a long clean path.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#25255a"/>
+      <stop offset="1" stop-color="#101026"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7b2d8e"/>
+      <stop offset="1" stop-color="#b878e2"/>
+    </linearGradient>
+    <clipPath id="card"><rect width="1280" height="590" rx="24"/></clipPath>
+  </defs>
+  <style>
+    text { font-family: Overpass, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif; }
+    .name { font-size: 18px; font-weight: 700; fill: #ffffff; }
+    .path { font-size: 14px; fill: #b3b3cc; }
+    .times { font-size: 14px; font-weight: 600; fill: #ffffff; }
+    .value { font-size: 22px; font-weight: 800; fill: #ffffff; }
+    .note { font-size: 13px; fill: #8f8fb0; }
+  </style>
+
+  <rect width="1280" height="590" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="6" fill="#a55bd0" clip-path="url(#card)"/>
+
+  <text x="56" y="66" font-size="30" font-weight="800" fill="#ffffff">Lanes: many direct connections instead of one</text>
+  <text x="56" y="98" font-size="16" fill="#b3b3cc">How many times faster a file arrives than over a single WebRTC data channel, through emulated real-world paths</text>
+
+  <!-- 1x reference: one connection -->
+  <line x1="540" y1="138" x2="540" y2="524" stroke="#ffffff" stroke-opacity="0.35" stroke-dasharray="4 6"/>
+  <text x="540" y="130" text-anchor="middle" class="note">1× = one connection</text>
+
+  <!-- Same network -->
+  <text x="56" y="172" class="name">64 MB video</text>
+  <text x="56" y="194" class="path">Same network · 1 Gbit/s · 2 ms</text>
+  <rect x="500" y="162" width="84" height="30" rx="8" fill="url(#bar)"/>
+  <text x="598" y="185" class="value">2.1×</text>
+  <text x="656" y="184" class="path">7.0 s → 3.4 s</text>
+
+  <!-- Mobile to broadband -->
+  <text x="56" y="236" class="name">16 MB video</text>
+  <text x="56" y="258" class="path">Mobile ↔ broadband · 50 Mbit/s · 100 ms · 0.1 % loss</text>
+  <rect x="500" y="226" width="208" height="30" rx="8" fill="url(#bar)"/>
+  <text x="514" y="246" class="times">30.6 s → 5.9 s</text>
+  <text x="722" y="249" class="value">5.2×</text>
+
+  <text x="56" y="300" class="name">10 × 1 MB photos</text>
+  <text x="56" y="322" class="path">Mobile ↔ broadband · 50 Mbit/s · 100 ms · 0.1 % loss</text>
+  <rect x="500" y="290" width="340" height="30" rx="8" fill="url(#bar)"/>
+  <text x="514" y="310" class="times">23.8 s → 2.8 s</text>
+  <text x="854" y="313" class="value">8.5×</text>
+
+  <!-- Far path -->
+  <text x="56" y="364" class="name">8 MB video</text>
+  <text x="56" y="386" class="path">Far path · 30 Mbit/s · 220 ms · 0.2 % loss</text>
+  <rect x="500" y="354" width="340" height="30" rx="8" fill="url(#bar)"/>
+  <text x="514" y="374" class="times">113.5 s → 13.4 s</text>
+  <text x="854" y="377" class="value">8.5×</text>
+
+  <text x="56" y="428" class="name">6 × 1 MB photos</text>
+  <text x="56" y="450" class="path">Far path · 30 Mbit/s · 220 ms · 0.2 % loss</text>
+  <rect x="500" y="418" width="388" height="30" rx="8" fill="url(#bar)"/>
+  <text x="514" y="438" class="times">53.3 s → 5.5 s</text>
+  <text x="902" y="441" class="value">9.7×</text>
+
+  <!-- Long clean path -->
+  <text x="56" y="492" class="name">8 MB video</text>
+  <text x="56" y="514" class="path">Long clean path · 50 Mbit/s · 100 ms</text>
+  <rect x="500" y="482" width="600" height="30" rx="8" fill="url(#bar)"/>
+  <text x="514" y="502" class="times">65.8 s → 4.3 s</text>
+  <text x="1114" y="505" class="value" fill="#35d495" style="fill:#35d495">15×</text>
+
+  <text x="56" y="562" class="note">Lanes: median of 3 runs. Single channel: one run of the previous version. Paths emulated by a UDP proxy with rate, queue, delay and loss.</text>
+</svg>

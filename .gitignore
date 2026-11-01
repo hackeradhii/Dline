@@ -12,6 +12,7 @@ test-results/
 .claude/
 .impeccable/
 .serena/
+graphify-out/
 skills-lock.json
 
 # Working documents: product/design notes and the speed plan with its review log. Local only.

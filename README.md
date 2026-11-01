@@ -1,64 +1,135 @@
-# Dline
+<div align="center">
 
-**Peer-to-peer video calls and full-quality file sharing between two devices on two different networks, from a web page.**
+<img src="docs/assets/banner.svg" alt="Dline: two stations, You and Them, joined by a direct line" width="100%">
 
-No app, no account, no media server. Open the page, share a code, and the two devices connect directly: the video call, the photos, the videos and any other file go device to device. A server is used only to help the two devices find each other (NAT hole punching), and it never sees a single byte of media.
+<br>
+<br>
 
-**Live:** [dline.adhi-dev.workers.dev](https://dline.adhi-dev.workers.dev) · Chrome, Edge, Firefox and Safari (iOS 16.4+) on phones, tablets, laptops and desktops, in any mix.
+**Peer-to-peer video calls and full-quality file sharing between two devices on two different networks, straight from a web page.**
 
----
+No app to install. No account. No media server.
+
+<br>
+
+[![Open the live app](https://img.shields.io/badge/Open_the_live_app-dline.adhi--dev.workers.dev-7B2D8E?style=for-the-badge&logo=cloudflare&logoColor=white)](https://dline.adhi-dev.workers.dev)
+
+![Svelte 5](https://img.shields.io/badge/Svelte_5-FF3E00?style=flat-square&logo=svelte&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=flat-square&logo=cloudflareworkers&logoColor=white)
+![PWA](https://img.shields.io/badge/Installable_PWA-5A0FC8?style=flat-square&logo=pwa&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-244_passing-00855A?style=flat-square)
+![Duplicated code](https://img.shields.io/badge/duplicated_code-0_blocks-00855A?style=flat-square)
+
+[The challenge](#the-challenge) · [Features](#features) · [How it works](#how-it-works) · [Speed](#speed) · [Architecture](#architecture) · [Getting started](#getting-started)
+
+</div>
+
+<br>
+
+<table>
+  <tr>
+    <td align="center" width="25%"><h2>~1 s</h2><sub>to pair two devices</sub></td>
+    <td align="center" width="25%"><h2>0 bytes</h2><sub>of media through any server</sub></td>
+    <td align="center" width="25%"><h2>up to 15×</h2><sub>faster files than one connection</sub></td>
+    <td align="center" width="25%"><h2>3 s → 15 ms</h2><sub>upload queue during a call (lab)</sub></td>
+  </tr>
+</table>
 
 ## The challenge
 
-Dline started as a challenge with a strict set of rules:
+Dline started as a challenge with a strict set of rules. Each one is met like this:
 
 | Rule | How Dline meets it |
-| --- | --- |
-| Two devices on two different networks | WebRTC with trickle ICE, STUN over IPv4 and IPv6, and an ICE restart when a device switches networks |
-| Share images and videos, and make a camera video call | One-to-one 720p30 call plus file transfer of any type and size, at the same time, over the same connection |
-| Entirely peer-to-peer | Media is DTLS-SRTP and files are SCTP over DTLS, both device to device. The connection panel shows *0 bytes through any relay* as proof |
-| A server only for hole punching | A tiny rendezvous room swaps the WebRTC handshake (SDP and ICE candidates, at most 16 KB per message) and nothing else. A **links-only mode needs no server at all** |
-| Reliable | Heartbeat, automatic recovery, a network pre-check, and a clear explanation when a direct path is impossible |
-| Fast | Pairing in about a second; files reach the raw data-channel speed locally and are **5–15× faster than a single connection** on long or lossy paths |
+| :-- | :-- |
+| **Two devices, two different networks** | WebRTC with trickle ICE, STUN over IPv4 and IPv6, and an ICE restart when a device switches networks |
+| **Share images and videos, and make a camera call** | A one-to-one 720p30 call and files of any type and size, at the same time, over the same connection |
+| **Entirely peer-to-peer** | Media is DTLS-SRTP and files are SCTP over DTLS, device to device. The connection panel shows *0 bytes through any relay* as proof |
+| **A server only for hole punching** | A tiny rendezvous room swaps the handshake (SDP and ICE, at most 16 KB per message) and nothing else. **Links-only mode needs no server at all** |
+| **Reliable** | Heartbeat, automatic recovery, a network pre-check, and a clear explanation when a direct path is impossible |
+| **Fast** | Pairing in about a second; files at raw data-channel speed locally and **5–15× faster than one connection** on long or lossy paths |
 
-When a direct path truly can't exist (strict NAT on both sides, UDP blocked, IPv4-only on one side and IPv6-only on the other), Dline says so and names the likely cause. A TURN relay can be switched on in Settings, but it is off by default and always labelled *Relayed, not peer-to-peer*. Dline never relays silently.
+> [!NOTE]
+> When a direct path truly can't exist (strict NAT on both sides, UDP blocked, or IPv4-only on one side and IPv6-only on the other), Dline says so and names the likely cause. A TURN relay can be switched on in Settings, but it is off by default and always labelled *Relayed, not peer-to-peer*. **Dline never relays silently.**
 
-## What I built
+## Features
 
-- **A complete WebRTC app, from pairing to recovery.** Perfect negotiation, in-band renegotiation over a control channel, transceiver reuse across calls, ICE restarts that survive a Wi-Fi to mobile switch, and a watchdog that reports a lost connection within 15 seconds.
-- **Two ways to pair.** A room code, QR code or link through a Cloudflare Durable Object, or a serverless exchange of two links through any chat app. In links-only mode the handshake is packed into an invite link of under 260 characters and travels in the URL fragment, which browsers never send to a server.
-- **Multi-lane file transfer.** Files are cut into 128 KB blocks, each verified with SHA-256, and spread over up to 16 parallel direct connections. Large files stream to disk (OPFS) instead of memory.
-- **Dline Flow, a delay-based pacing controller** (in the lab stage). It keeps file transfers from flooding a phone's upload buffer, so a video call stays smooth while files are moving. See [Dline Flow](#dline-flow-files-that-dont-break-the-call).
-- **Honest diagnostics.** A live path badge, round trip, bitrate, loss and codec, a network pre-check (Good / Risky / Blocked), a "no direct path" screen that explains why, and a 4-word safety code from both DTLS fingerprints that shows nobody is in the middle.
-- **A network lab on one laptop.** A UDP proxy that emulates real links (rate, queue depth, delay, loss, asymmetric phone uplinks) with the browsers forced through it, so every speed claim here is measured, not assumed.
-- **Architecture that enforces itself.** Module boundaries, no copy-paste and the SOLID contracts are checked by tooling on every run (see [Architecture](#architecture)).
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📞 Calls that survive the real world</h3>
+      Perfect negotiation, in-band renegotiation over an encrypted control channel, transceivers reused across calls, ICE restarts that survive a Wi-Fi → mobile switch, and a watchdog that reports a lost connection within 15 seconds.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔗 Pair with a server, or without one</h3>
+      A room code, QR code or link through a Cloudflare Durable Object, or a serverless swap of two links through any chat app. The handshake is packed into an invite link of under 260 characters, carried in the URL fragment that browsers never send to a server.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🛤️ Multi-lane file transfer</h3>
+      Files are cut into 128 KB blocks, each checked with SHA-256, and spread over up to 16 parallel direct connections. Blocks arrive in any order and are written by position. Large files stream to disk (OPFS) instead of memory.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🌊 Dline Flow pacing <sup><code>lab</code></sup></h3>
+      A delay-based controller that stops file transfers from flooding a phone's upload buffer, so the video call stays smooth while files are moving. Older peers fall back to the previous pacing automatically.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🔍 Honest diagnostics</h3>
+      A live path badge, round trip, bitrate, loss and codec, a network pre-check (Good / Risky / Blocked), a "no direct path" screen that explains why, and a 4-word <b>safety code</b> from both DTLS fingerprints that shows nobody is in the middle.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🧪 A network lab on one laptop</h3>
+      A UDP proxy that emulates real links (rate, queue depth, delay, loss, asymmetric phone uplinks) with real browsers forced through it. Every speed claim in this README is measured, not assumed.
+    </td>
+  </tr>
+</table>
 
 ## How it works
 
 ```mermaid
-flowchart LR
-  A[Device A browser] -- "handshake only (wss)" --> R[Rendezvous<br/>Durable Object]
-  B[Device B browser] -- "handshake only (wss)" --> R
-  A -- STUN --> S[(Public STUN)]
-  B -- STUN --> S
-  A <== "video + audio (SRTP) · files (SCTP over DTLS) · direct" ==> B
+sequenceDiagram
+    autonumber
+    participant A as Device A
+    participant R as Rendezvous room
+    participant B as Device B
+    A->>R: Start a line (code K7M-Q3P)
+    B->>R: Join with the code, QR or link
+    A->>R: Offer and ICE candidates
+    R->>B: Relayed (validated, at most 16 KB)
+    B->>R: Answer and ICE candidates
+    R->>A: Relayed
+    Note over A,B: Public STUN (IPv4 and IPv6) punches a direct path
+    A->>B: Encrypted control channel opens, renegotiation moves here
+    Note over A,B: Direct from now on: video and audio (SRTP), files on up to 16 lanes (SCTP over DTLS)
 ```
 
-1. **Pairing.** One device starts a line and gets a code like `K7M-Q3P`, a QR code and a link. The other joins. The rendezvous room relays only the handshake: validated messages of at most 16 KB, never media.
-2. **Connecting.** Both browsers gather candidates through public STUN servers (IPv4 and IPv6) and punch a direct path. Once the encrypted control channel opens, everything else, including later renegotiation, travels over it, peer to peer.
-3. **Calling.** One audio and one video transceiver per connection, reused for every call, so the session description never grows. Turning the camera off really stops it (the light goes off).
-4. **Sending files.** Blocks go to whichever lane has room; the receiver writes them by position in any order, checks each one's SHA-256, and acknowledges it. An overdue block is sent again on another lane, so one lane recovering from loss can't hold up the end of a file.
+1. **Pairing.** One device starts a line and gets a code, a QR code and a link. The other joins. The rendezvous room relays only the handshake, never media.
+2. **Connecting.** Both browsers gather candidates through public STUN servers and punch a direct path. Once the control channel opens, everything else travels over it, peer to peer.
+3. **Calling.** One audio and one video transceiver per connection, reused for every call, so the session description never grows. Turning the camera off really stops it: the light goes off.
+4. **Sending files.** Blocks go to whichever lane has room. The receiver writes them by position, checks each SHA-256 and acknowledges it. An overdue block is re-sent on another lane, so one lane recovering from loss can't hold up the end of a file.
 
-### Why files are fast: lanes
+## Speed
 
-One WebRTC data connection sends one congestion window per round trip and halves it on every loss. On a long or lossy path that caps it far below the link: about **0.45 MB/s on a 100 ms path with 0.1 % loss**, whether the link is 5 or 500 Mbit/s. Bigger buffers don't help.
+### Lanes: many direct connections instead of one
 
-So Dline opens **extra direct connections ("lanes")** next to the main one, negotiated in-band (STUN only, never a relay). Each lane has its own window, so throughput grows with the number of lanes: 3 extra when the devices are near (lowest round trip ≤ 20 ms) and 15 when they are far.
+One WebRTC data channel sends one congestion window per round trip and halves it on every loss. On a long or lossy path that caps it far below the link: about **0.45 MB/s on a 100 ms path with 0.1 % loss**, whether the link is 5 or 500 Mbit/s. Bigger buffers don't help.
 
-Measured through the emulated paths (lanes: median of 3 runs; single channel: one run of the previous version):
+So Dline opens **extra direct connections, called lanes,** next to the main one. They are negotiated in-band and use STUN only, never a relay. Each lane has its own window, so throughput grows with the lane count: 3 extra lanes when the devices are near (lowest round trip ≤ 20 ms) and 15 when they are far.
+
+<p align="center">
+  <img src="docs/assets/lanes-speed.svg" alt="Speed-up from lanes: 2.1× on the same network, 5.2× and 8.5× mobile to broadband, 8.5× and 9.7× on a far path, 15× on a long clean path" width="100%">
+</p>
+
+<details>
+<summary><b>Full results table</b></summary>
+
+<br>
 
 | Path | File | Single channel | Lanes | Faster |
-| --- | --- | --- | --- | --- |
+| :-- | :-- | --: | --: | --: |
 | Same network (1 Gbit/s, 2 ms) | 64 MB video | 7.0 s | 3.4 s | 2.1× |
 | Mobile ↔ broadband (50 Mbit/s, 100 ms, 0.1 % loss) | 16 MB video | 30.6 s | 5.9 s | 5.2× |
 | | 10 × 1 MB photos | 23.8 s | 2.8 s | 8.5× |
@@ -66,30 +137,59 @@ Measured through the emulated paths (lanes: median of 3 runs; single channel: on
 | | 6 × 1 MB photos | 53.3 s | 5.5 s | 9.7× |
 | Long clean path (50 Mbit/s, 100 ms) | 8 MB video | 65.8 s | 4.3 s | 15× |
 
+Lanes: median of 3 runs. Single channel: one run of the previous version.
+
+</details>
+
 ### Dline Flow: files that don't break the call
 
-A first real-network test (a laptop on Wi-Fi, a phone on 5G) exposed a problem the lab hadn't: phone uplinks don't drop packets when they're full, they **queue seconds of data**. While the phone sent a file during a call, the ping climbed to about 3 seconds and the file crawled.
+The first real-network test (a laptop on Wi-Fi, a phone on 5G) exposed something the lab hadn't: phone uplinks don't drop packets when they're full, they **queue seconds of data**. While the phone sent a file during a call, the ping climbed to about 3 seconds and the file crawled.
 
-Flow fixes that with a receiver-clocked control loop over the whole bundle of lanes, after SCReAM v2's "virtual L4S" design:
+Flow fixes that with a receiver-clocked control loop over the whole bundle of lanes, modelled on SCReAM v2's "virtual L4S" design:
 
-- The sender probes the control channel every 40 ms, and the receiver echoes each probe with its own timestamp and the bytes it has received, so the sender sees the queue building within a round trip.
-- The controller holds the upload queue near a small target (30 ms during a call, 60 ms otherwise), cutting the rate in proportion to the queue and regrowing carefully near the last congestion point.
-- During a call, files stay below the bottleneck minus the call's share, so the call comes first.
-- Blocks leave as paced 1–16 KiB pieces instead of 128 KB bursts, and short validation pauses (with a marker on every lane) prove the base delay was measured on an empty path.
-- Older peers that don't answer the probes get today's pacing automatically.
+```mermaid
+flowchart LR
+    P["Probe<br/>every 40 ms on ctrl"] --> E["Delay estimator<br/>queue = delay − base"]
+    E --> C["Controller<br/>hold the queue near target"]
+    C --> S["Pacing selector<br/>Flow, or legacy for old peers"]
+    S --> K["Pacer<br/>1–16 KiB paced chunks"]
+    K --> L["Lanes"]
+    L -. "receiver echoes timestamp + bytes received" .-> E
+```
 
-**Lab results** (emulated 9 Mbit/s phone uplink with a 3 s buffer; medians of 3 runs, legacy pacing against Flow):
+- **See the queue within a round trip.** The receiver echoes every probe with its own timestamp and the bytes it has received.
+- **Hold the queue near a small target:** 30 ms during a call, 60 ms otherwise. The rate is cut in proportion to the queue and regrows carefully near the last congestion point.
+- **The call comes first.** During a call, files stay below the bottleneck minus the call's share.
+- **No bursts.** Blocks leave as paced 1–16 KiB pieces instead of 128 KB bursts, and short validation pauses (with a marker on every lane) prove the base delay was measured on an empty path.
 
-| Scenario | Legacy: files / queue | Flow: files / queue | Video call |
-| --- | --- | --- | --- |
+<p align="center">
+  <img src="docs/assets/flow-queue.svg" alt="Flow cuts the upload queue from 3 s to 62 ms without a call and to 15 ms during a call, and the call holds 720p30 with no freezes" width="100%">
+</p>
+
+<details>
+<summary><b>Full lab results</b></summary>
+
+<br>
+
+Emulated 9 Mbit/s phone uplink with a 3 s buffer; medians of 3 runs, previous pacing against Flow.
+
+| Scenario | Previous: files / queue | Flow: files / queue | Video call |
+| :-- | :-- | :-- | :-- |
 | Phone → laptop, no call | 4.65 Mbit/s / 3.0 s | **8.16 Mbit/s / 62 ms** | – |
 | Phone → laptop, during a call | 5.44 Mbit/s / 3.0 s, call broken (0 of 3) | 5.20–5.56 Mbit/s / **15 ms** | **720p30, no freezes** |
 | Laptop → phone, during a call | 15.6 Mbit/s / 199 ms, call broken (0 of 3) | **21.3 Mbit/s / 23 ms** | 720p30, no freezes |
 | Fluctuating uplink (5–12 Mbit/s), during a call | 4.07 Mbit/s / 3.0 s | 2.33 Mbit/s / **15 ms** | protected first |
 
-On paths that don't queue (same network, far, long clean path) Flow matches or beats the old pacing: 100 %, 113 % and 109 %. One case is still open: a mobile path without a call starts slower (86 % of legacy), because Flow's paced start feeds the 16 lanes a few at a time.
+On paths that don't queue (same network, far, long clean path) Flow matches or beats the old pacing: 100 %, 113 % and 109 %. One case is still open: a mobile path without a call starts slower (86 % of the old pacing), because Flow's paced start feeds the 16 lanes a few at a time.
 
-**Status:** built and validated in the lab, field testing in progress. The build defaults to *shadow* mode, where Flow measures and the previous pacing applies. `?pacing=flow` turns Flow on, `?pacing=legacy` turns it off, and `?debug=1` shows the mode and offers a pacing trace download. Share links carry the switches, so both devices always match.
+</details>
+
+> [!IMPORTANT]
+> **Flow is built and validated in the lab; field testing is in progress.** The build defaults to *shadow* mode, where Flow measures and the previous pacing applies. Add `?pacing=flow` to turn Flow on, `?pacing=legacy` to turn it off, or `?debug=1` to show the mode and download a pacing trace. Share links carry the switches, so both devices always match.
+
+### On one laptop
+
+Pairing in about 1 s. A 32 MB file at **23 MB/s**, against one raw data channel's 20–23 MB/s, and the same speed during a video call. First load is **71 KB of JavaScript and 9 KB of CSS** (gzipped); repeat visits load from the service worker.
 
 ## Using it
 
@@ -97,13 +197,37 @@ On paths that don't queue (same network, far, long clean path) Flow matches or b
 2. **The other person joins** by opening the link, scanning the QR code or typing the code.
 3. **You're connected.** Start a video call, send photos, videos or any other file (PDF, ZIP, documents…), or both at once. Photos and videos get a preview, other files a Save button, and files that can run programs (APK, EXE…) a warning.
 
-**No-server mode:** "Pair with links instead" swaps an invite link and a reply link through any chat app.
+> [!TIP]
+> **No server at all:** tap *Pair with links instead* and swap an invite link and a reply link through any chat app.
 
-The band at the top draws the connection as a two-station metro line from You to Them: dashed while it is being built, solid when direct, with a *Relay* interchange when relayed, and broken when lost. Each tick on the line is a lane carrying files. Tap the plate for the details: candidate types, round trip, upload queue, bitrate, packet loss, video resolution and codec, and the **safety code**. If both people see the same four words, nobody is in the middle.
+The band at the top draws the connection as a two-station metro line from **You** to **Them**: dashed while it's being built, solid when direct, with a *Relay* interchange when relayed, and broken when lost. Each tick on the line is a lane carrying files. Tap the plate for the details: candidate types, round trip, upload queue, bitrate, packet loss, video resolution and codec, and the **safety code**. If both people see the same four words, nobody is in the middle.
 
 ## Architecture
 
 A **modular monolith**: one repository, one package and **one deployable**, a Cloudflare Worker that serves the static app and hosts the rendezvous Durable Object.
+
+```mermaid
+flowchart TD
+    App["app<br/>composition root, screens"] --> UI["ui<br/>design system"]
+    App --> Pairing["pairing"]
+    App --> Call["call"]
+    App --> Transfer["transfer"]
+    App --> Diagnostics["diagnostics"]
+    App --> Settings["settings"]
+    App --> Connection["connection"]
+    Pairing --> Connection
+    Transfer --> Connection
+    Diagnostics --> Connection
+    Connection --> Base["contracts + shared<br/>schemas, ports, config"]
+    Call --> Base
+    Settings --> Base
+    Server["server<br/>Worker + Durable Object"] --> Base
+```
+
+<details>
+<summary><b>Code map</b></summary>
+
+<br>
 
 ```
 src/
@@ -124,74 +248,93 @@ tests/
   bench/          the network lab: UDP proxy, emulated paths, throughput and call-quality runs
 ```
 
-**The rules are enforced, not just written down.** `npm run check` fails the build if any of them break:
+</details>
 
-- **Module boundaries** (dependency-cruiser): no deep imports, no shortcuts between modules, no cycles, no framework code inside modules, and the Worker imports only contracts and shared code.
-- **No copy-paste** (jscpd): 0 duplicated blocks.
-- **Contracts:** every file sink and every pacing policy passes a shared contract test (Liskov).
-- **Ports:** browser APIs are injected through small interfaces, wired in one place, so the core is unit-testable without a browser.
-- **Untrusted input** (control messages, file data, links, rendezvous) is parsed with schemas before use.
+**The rules are enforced, not just written down.** `npm run check` fails if any of them break:
+
+| Rule | Enforced by |
+| :-- | :-- |
+| Module boundaries: no deep imports, no shortcuts between modules, no cycles, no framework code inside modules | dependency-cruiser |
+| No copy-paste: 0 duplicated blocks | jscpd |
+| Every file sink and every pacing policy is interchangeable (Liskov) | shared contract tests |
+| Browser APIs injected through small ports, wired in one place, so the core is testable without a browser | TypeScript + unit tests |
+| Untrusted input (control messages, file data, links, rendezvous) parsed with schemas before use | valibot |
 
 ## Getting started
 
-Requires Node.js 22.12 or newer.
+Requires **Node.js 22.12** or newer.
 
 ```bash
 npm install
 npm run dev        # app + Worker + Durable Object locally at http://localhost:5173
 npm run check      # types, lint, module boundaries, duplicates, unit and Worker tests
 npm run e2e        # two-browser end-to-end tests with a fake camera
-E2E_PREVIEW=1 npm run e2e   # the same suite against the production build in workerd
 ```
 
 Camera access needs HTTPS or `localhost`; Cloudflare Workers serve HTTPS by default.
 
-**Speed lab** (always runs the production build):
+<details>
+<summary><b>Run the speed lab</b></summary>
+
+<br>
+
+The lab always runs the production build.
 
 ```bash
 # Throughput through emulated real-world paths
 BENCH=lan,mobile,far,clean npx playwright test -c playwright.bench.config.ts tests/bench/app.spec.ts --repeat-each 3
 
-# Phone uplink scenarios, with a video call running, Flow against the previous pacing
+# Phone uplink scenarios with a video call running, Flow against the previous pacing
 BENCH=cell-up,cell-down,cell-var CALL=1 PACING=flow npx playwright test -c playwright.bench.config.ts tests/bench/app.spec.ts --repeat-each 3
 ```
 
-Each run appends to `test-results/bench-results.jsonl` and prints medians at the end.
+Each run appends to `test-results/bench-results.jsonl` and prints medians at the end. `E2E_PREVIEW=1 npm run e2e` runs the end-to-end suite against the production build in workerd.
 
-**Deploy** (needs a Cloudflare account):
+</details>
+
+<details>
+<summary><b>Deploy to Cloudflare</b></summary>
+
+<br>
+
+Needs a Cloudflare account.
 
 ```bash
 npm run deploy           # production Worker
 npm run deploy:staging   # separate test Worker with Flow on by default (its rooms never mix with production's)
 ```
 
+</details>
+
 ## Testing
 
 | Layer | What it covers |
-| --- | --- |
-| Unit and Worker tests (Vitest, 244 tests) | Negotiation, lanes, framing, scheduling, resend, every Flow component, a simulated bottleneck, mixed old/new peers, the rendezvous Durable Object in workerd |
-| End to end (Playwright) | Pairing by code and by links, a full video call, files both ways during a call verified by SHA-256, any file type, leave detection, localhost throughput |
-| Network lab (`tests/bench`) | Real browsers through emulated links: throughput, queueing delay and call quality (bitrate, frame rate, freezes) |
-
-Measured on one laptop (localhost): pairing in about 1 s; a 32 MB file at **23 MB/s**, against one raw data channel's 20–23 MB/s; the same speed during a video call. First load is 71 KB of JavaScript and 9 KB of CSS (gzipped), and repeat visits load from the service worker.
+| :-- | :-- |
+| **Unit and Worker** <br><sub>Vitest · 244 tests</sub> | Negotiation, lanes, framing, scheduling, resend, every Flow component, a simulated bottleneck, mixed old and new peers, the rendezvous Durable Object in workerd |
+| **End to end** <br><sub>Playwright</sub> | Pairing by code and by links, a full video call, files both ways during a call verified by SHA-256, any file type, leave detection, localhost throughput |
+| **Network lab** <br><sub>`tests/bench`</sub> | Real browsers through emulated links: throughput, queueing delay and call quality (bitrate, frame rate, freezes) |
 
 ## Privacy and security
 
-- Media and files never touch a server. The rendezvous sees only the handshake, and links-only mode uses no server at all.
-- Everything between the devices is encrypted (DTLS-SRTP and DTLS).
-- The safety code lets two people confirm, out loud, that their connection is end to end.
-- No accounts, no analytics and no storage of calls or files. Received files live in memory or the browser's private storage and are cleared on the next start.
+- 🔒 **Media and files never touch a server.** The rendezvous sees only the handshake, and links-only mode uses no server at all.
+- 🔐 **Everything between the devices is encrypted** with DTLS-SRTP and DTLS.
+- 🗣️ **The safety code** lets two people confirm, out loud, that their connection is end to end.
+- 🧹 **No accounts, no analytics, no stored calls or files.** Received files live in memory or the browser's private storage and are cleared on the next start.
 
 ## Known limits
 
 - A browser can't keep a call running in the background like a native app.
 - Each side sees the other's public IP address; that is inherent to a direct connection.
 - One-to-one only. Group calls would need a media server.
-- Instagram and Facebook in-app browsers may block the camera; Dline detects them and explains how to open the link in Chrome or Safari.
-- Real carrier networks are still being tested. The matrix below is filled in as each combination is tried.
+- Instagram and Facebook in-app browsers may block the camera. Dline detects them and explains how to open the link in Chrome or Safari.
+
+<details>
+<summary><b>Real-network test matrix</b> (filled in as each combination is tried)</summary>
+
+<br>
 
 | # | Device A network | Device B network | Expected path | Result |
-| --- | --- | --- | --- | --- |
+| :-: | :-- | :-- | :-- | :-- |
 | 1 | Home Wi-Fi | Same Wi-Fi | Direct, same network | |
 | 2 | Home Wi-Fi | Jio 5G | Direct, likely IPv6 | |
 | 3 | Jio 5G | Airtel 4G/5G | Direct, likely IPv6 | |
@@ -201,10 +344,37 @@ Measured on one laptop (localhost): pairing in about 1 s; a 32 MB file at **23 M
 | 7 | Wi-Fi, switched to mobile mid-call | Any | Recovers via ICE restart, else "lost" | |
 | 8 | Laptop (Wi-Fi) | iPad (mobile hotspot) | Direct | |
 
+</details>
+
 ## Tech stack
 
-Svelte 5, TypeScript, Vite and Tailwind CSS v4 (an installable PWA) · WebRTC · Cloudflare Workers and Durable Objects · valibot · Vitest, Playwright, dependency-cruiser, jscpd and ESLint.
+<table>
+  <tr>
+    <td><b>App</b></td>
+    <td>Svelte 5 · TypeScript · Vite · Tailwind CSS v4 · installable PWA</td>
+  </tr>
+  <tr>
+    <td><b>Real-time</b></td>
+    <td>WebRTC: SRTP media, SCTP data channels, trickle ICE, STUN over IPv4 and IPv6</td>
+  </tr>
+  <tr>
+    <td><b>Server</b></td>
+    <td>Cloudflare Workers · Durable Objects (rendezvous only)</td>
+  </tr>
+  <tr>
+    <td><b>Quality</b></td>
+    <td>valibot · Vitest · Playwright · dependency-cruiser · jscpd · ESLint</td>
+  </tr>
+</table>
 
----
+<br>
 
-Built by [Adhii](https://github.com/hackeradhii).
+<div align="center">
+
+Works in Chrome, Edge, Firefox and Safari (iOS 16.4+), on phones, tablets, laptops and desktops, in any mix.
+
+<br>
+
+<sub>Built by <a href="https://github.com/hackeradhii">Adhii</a></sub>
+
+</div>

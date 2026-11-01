@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">
+  <title id="title">Dline Flow keeps the upload queue short</title>
+  <desc id="desc">On an emulated phone uplink, the upload queue drops from 3 seconds to 62 milliseconds without a call and to 15 milliseconds during a call; laptop to phone during a call it drops from 199 to 23 milliseconds, and the call holds 720p30 with no freezes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#25255a"/>
+      <stop offset="1" stop-color="#101026"/>
+    </linearGradient>
+    <clipPath id="card"><rect width="1280" height="440" rx="24"/></clipPath>
+  </defs>
+  <style>
+    text { font-family: Overpass, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif; }
+    .tile { fill: #ffffff; fill-opacity: 0.05; stroke: #ffffff; stroke-opacity: 0.12; }
+    .scenario { font-size: 18px; font-weight: 700; fill: #ffffff; }
+    .label { font-size: 12px; font-weight: 700; letter-spacing: 3px; fill: #b3b3cc; }
+    .big { font-size: 60px; font-weight: 800; fill: #35d495; }
+    .before { font-size: 15px; font-weight: 600; fill: #ff6b5e; }
+    .detail { font-size: 15px; fill: #ececf5; }
+    .note { font-size: 13px; fill: #8f8fb0; }
+  </style>
+
+  <rect width="1280" height="440" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="6" fill="#a55bd0" clip-path="url(#card)"/>
+
+  <text x="56" y="66" font-size="30" font-weight="800" fill="#ffffff">Dline Flow: files that don't break the call</text>
+  <text x="56" y="98" font-size="16" fill="#b3b3cc">Upload queue on an emulated phone uplink (9 Mbit/s with a 3-second buffer), previous pacing against Flow</text>
+
+  <!-- Phone to laptop, no call -->
+  <rect class="tile" x="56" y="128" width="368" height="250" rx="16"/>
+  <text x="80" y="164" class="scenario">Phone → laptop, no call</text>
+  <text x="80" y="198" class="label">UPLOAD QUEUE</text>
+  <text x="76" y="262" class="big">62 ms</text>
+  <text x="80" y="290" class="before">before: 3.0 s</text>
+  <line x1="80" y1="310" x2="400" y2="310" stroke="#ffffff" stroke-opacity="0.12"/>
+  <text x="80" y="336" class="detail">Files 8.16 Mbit/s</text>
+  <text x="80" y="358" class="detail">before: 4.65 Mbit/s (1.75× faster)</text>
+
+  <!-- Phone to laptop, during a call -->
+  <rect class="tile" x="456" y="128" width="368" height="250" rx="16"/>
+  <text x="480" y="164" class="scenario">Phone → laptop, during a call</text>
+  <text x="480" y="198" class="label">UPLOAD QUEUE</text>
+  <text x="476" y="262" class="big">15 ms</text>
+  <text x="480" y="290" class="before">before: 3.0 s, call broken</text>
+  <line x1="480" y1="310" x2="800" y2="310" stroke="#ffffff" stroke-opacity="0.12"/>
+  <text x="480" y="336" class="detail">Video call 720p30, no freezes</text>
+  <text x="480" y="358" class="detail">Files 5.2–5.6 Mbit/s alongside it</text>
+
+  <!-- Laptop to phone, during a call -->
+  <rect class="tile" x="856" y="128" width="368" height="250" rx="16"/>
+  <text x="880" y="164" class="scenario">Laptop → phone, during a call</text>
+  <text x="880" y="198" class="label">UPLOAD QUEUE</text>
+  <text x="876" y="262" class="big">23 ms</text>
+  <text x="880" y="290" class="before">before: 199 ms, call broken</text>
+  <line x1="880" y1="310" x2="1200" y2="310" stroke="#ffffff" stroke-opacity="0.12"/>
+  <text x="880" y="336" class="detail">Video call 720p30, no freezes</text>
+  <text x="880" y="358" class="detail">Files 21.3 Mbit/s (before: 15.6)</text>
+
+  <text x="56" y="414" class="note">Medians of 3 runs in the network lab. Flow is in the lab stage: the default build measures in shadow mode and keeps the previous pacing.</text>
+</svg>
