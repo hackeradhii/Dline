@@ -11,7 +11,7 @@ No app to install. No account. No media server.
 
 <br>
 
-[![Open the live app](https://img.shields.io/badge/Open_the_live_app-dline.adhi--dev.workers.dev-7B2D8E?style=for-the-badge&logo=cloudflare&logoColor=white)](https://dline.adhi-dev.workers.dev)
+
 
 ![Svelte 5](https://img.shields.io/badge/Svelte_5-FF3E00?style=flat-square&logo=svelte&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
