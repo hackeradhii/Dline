@@ -205,7 +205,7 @@ export class Connection implements ChannelFactory, StatsSource, TransceiverHost,
   }
 
   async #gatheredLocalDescription(): Promise<RTCSessionDescriptionInit> {
-    await waitForGathering(this.#pc, LINK.gatherTimeoutMs);
+    await waitForGathering(this.#pc, LINK.gatherTimeoutMs, this.#clock);
     const local = this.#pc.localDescription;
     if (!local) throw new Error('No local description');
     return { type: local.type, sdp: local.sdp };

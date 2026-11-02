@@ -27,3 +27,5 @@ export const ControlSchema = v.union([
 export type ControlMessage = v.InferOutput<typeof ControlSchema>;
 export type ControlType = ControlMessage['t'];
 export type ControlOf<T extends ControlType> = Extract<ControlMessage, { t: T }>;
+/** Each control message type and the message it carries: the event map of a channel's handlers (`Emitter<ControlEvents>`). */
+export type ControlEvents = { [T in ControlType]: ControlOf<T> };

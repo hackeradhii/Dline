@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ControlMessage, ControlOf, ControlType } from '../../../contracts/control';
+import type { ControlEvents, ControlMessage, ControlOf, ControlType } from '../../../contracts/control';
 import type { ControlChannel } from '../../../contracts/ports';
 import { CONNECTION } from '../../../shared/config';
+import { Emitter } from '../../../shared/emitter';
 import { FakeClock, FakeVisibility } from '../../../shared/testing/fake-clock';
 import { VisibleTimer } from '../../../shared/timer';
 import { Heartbeat } from './heartbeat';
@@ -59,18 +60,13 @@ describe('Watchdog', () => {
 /** In-memory pair of control channels wired to each other. */
 function controlPair(): [ControlChannel, ControlChannel] {
   const make = () => {
-    const handlers = new Map<ControlType, Set<(m: ControlMessage) => void>>();
+    const handlers = new Emitter<ControlEvents>();
     const ch = {
       peer: null as null | { deliver(m: ControlMessage): void },
       isOpen: true,
       send: (m: ControlMessage) => (ch.peer?.deliver(m), true),
-      on<T extends ControlType>(type: T, handler: (m: ControlOf<T>) => void) {
-        const set = handlers.get(type) ?? new Set();
-        set.add(handler as (m: ControlMessage) => void);
-        handlers.set(type, set);
-        return () => set.delete(handler as (m: ControlMessage) => void);
-      },
-      deliver: (m: ControlMessage) => handlers.get(m.t)?.forEach((h) => h(m)),
+      on: <T extends ControlType>(type: T, handler: (m: ControlOf<T>) => void) => handlers.on(type, handler),
+      deliver: (m: ControlMessage) => handlers.emit(m.t, m),
     };
     return ch;
   };

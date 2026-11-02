@@ -1,4 +1,4 @@
-import { ControlSchema, type ControlMessage, type ControlOf, type ControlType } from '../../../contracts/control';
+import { ControlSchema, type ControlEvents, type ControlMessage, type ControlOf, type ControlType } from '../../../contracts/control';
 import { parseMessage } from '../../../contracts/parse';
 import type { ControlChannel } from '../../../contracts/ports';
 import { Emitter, type Unsubscribe } from '../../../shared/emitter';
@@ -9,7 +9,7 @@ import { Emitter, type Unsubscribe } from '../../../shared/emitter';
  */
 export class DataControlChannel implements ControlChannel {
   #channel: RTCDataChannel | null = null;
-  readonly #handlers = new Map<ControlType, Set<(m: ControlMessage) => void>>();
+  readonly #handlers = new Emitter<ControlEvents>();
   readonly events = new Emitter<{ open: undefined; close: undefined; message: ControlMessage }>();
 
   get isOpen(): boolean {
@@ -35,14 +35,7 @@ export class DataControlChannel implements ControlChannel {
   }
 
   on<T extends ControlType>(type: T, handler: (message: ControlOf<T>) => void): Unsubscribe {
-    let set = this.#handlers.get(type);
-    if (!set) {
-      set = new Set();
-      this.#handlers.set(type, set);
-    }
-    const h = handler as (m: ControlMessage) => void;
-    set.add(h);
-    return () => set.delete(h);
+    return this.#handlers.on(type, handler);
   }
 
   close(): void {
@@ -54,6 +47,6 @@ export class DataControlChannel implements ControlChannel {
     const message = parseMessage(ControlSchema, raw);
     if (!message) return; // Unknown or malformed: ignored by design.
     this.events.emit('message', message);
-    for (const handler of [...(this.#handlers.get(message.t) ?? [])]) handler(message);
+    this.#handlers.emit(message.t, message);
   }
 }

@@ -1,5 +1,6 @@
 import { LINK } from '../../../shared/config';
 import type { Unsubscribe } from '../../../shared/emitter';
+import { systemClock, Timeout, type Clock } from '../../../shared/timer';
 
 /**
  * Same-browser handoff: a reply link opened from WhatsApp may land in a new tab, but the
@@ -21,16 +22,17 @@ export function listenForReplies(session: string, apply: (fragment: string) => P
 }
 
 /** New tab: hand the reply to the original tab. Resolves true if it was accepted there. */
-export function deliverReply(session: string, fragment: string): Promise<boolean> {
+export function deliverReply(session: string, fragment: string, clock: Clock = systemClock): Promise<boolean> {
   if (typeof BroadcastChannel !== 'function') return Promise.resolve(false);
   const channel = new BroadcastChannel(LINK.handoffChannel);
   return new Promise((resolve) => {
+    const timer = new Timeout(clock);
     const finish = (ok: boolean): void => {
-      clearTimeout(timer);
+      timer.clear();
       channel.close();
       resolve(ok);
     };
-    const timer = setTimeout(() => finish(false), LINK.handoffAckTimeoutMs);
+    timer.set(() => finish(false), LINK.handoffAckTimeoutMs);
     channel.onmessage = ({ data }: MessageEvent<HandoffMessage>) => {
       if (data?.kind === 'ack' && data.session === session) finish(true);
     };
