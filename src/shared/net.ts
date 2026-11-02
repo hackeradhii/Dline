@@ -5,7 +5,7 @@
 
 export type CandidateType = 'host' | 'srflx' | 'prflx' | 'relay';
 export type IpFamily = 'IPv4' | 'IPv6' | 'mdns' | 'unknown';
-export type Transport = 'udp' | 'tcp';
+type Transport = 'udp' | 'tcp';
 
 export interface ParsedCandidate {
   foundation: string;

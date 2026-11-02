@@ -7,7 +7,7 @@ import type { FlowProbe } from './flow-probe';
 import type { FlowTrace } from './flow-trace';
 import { LaneBarrier } from './lane-barrier';
 
-export interface ValidationDrainDeps {
+interface ValidationDrainDeps {
   controller: Pick<FlowController, 'state' | 'hold' | 'startDrain' | 'endDrain'>;
   estimator: Pick<DelayEstimator, 'cleanFrom' | 'stopCleaning'>;
   probe: Pick<FlowProbe, 'probeNow'>;

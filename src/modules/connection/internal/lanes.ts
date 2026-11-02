@@ -6,7 +6,7 @@ import { systemClock, Timeout, type Clock } from '../../../shared/timer';
 import { chunkSize } from './sctp';
 
 /** Label of the bulk-data channel on every lane. */
-export const BULK_LABEL = 'bulk';
+const BULK_LABEL = 'bulk';
 
 /** Most extra lanes either side will run. */
 const MAX_EXTRA = Math.max(...Object.values(LANES.extra));
@@ -16,7 +16,7 @@ export function extraLanesFor(rttMs: number | null): number {
   return rttMs !== null && rttMs > LANES.nearRttMs ? LANES.extra.far : LANES.extra.near;
 }
 
-export interface LanePoolOptions {
+interface LanePoolOptions {
   control: ControlChannel;
   /** The main connection. Lane 0 rides on it, so files flow before (and without) extra lanes. */
   main: ChannelFactory;

@@ -13,7 +13,7 @@ import type { BinaryReader, BinaryWriter } from './binary';
 export type SdpType = 'offer' | 'answer';
 type Setup = 'actpass' | 'active' | 'passive';
 
-export interface CompactDescription {
+interface CompactDescription {
   type: SdpType;
   ufrag: string;
   pwd: string;

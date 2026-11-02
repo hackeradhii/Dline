@@ -3,7 +3,7 @@ import { CONNECTION } from '../../../shared/config';
 import { Disposer, Emitter } from '../../../shared/emitter';
 import { systemClock, type Clock } from '../../../shared/timer';
 
-export interface HeartbeatEvents {
+interface HeartbeatEvents {
   rtt: number;
   responsive: boolean;
 }

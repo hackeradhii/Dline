@@ -9,7 +9,7 @@ export interface RatePolicy {
 }
 
 /** What the call side reports once per stats tick. */
-export interface CongestionSample {
+interface CongestionSample {
   callActive: boolean;
   rttMs: number | null;
   /** Inbound packet loss over the last tick, in percent. */

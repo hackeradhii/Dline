@@ -1,6 +1,6 @@
 /** Browser capability and context detection, kept in one place. */
 
-export interface Capabilities {
+interface Capabilities {
   webrtc: boolean;
   camera: boolean;
   opfs: boolean;
@@ -21,7 +21,7 @@ export function detectCapabilities(g: typeof globalThis = globalThis): Capabilit
   };
 }
 
-export type InAppBrowser = 'instagram' | 'facebook' | 'other' | null;
+type InAppBrowser = 'instagram' | 'facebook' | 'other' | null;
 
 /** In-app browsers often block the camera or WebRTC; the user must open the link in Chrome/Safari. */
 export function detectInAppBrowser(userAgent: string): InAppBrowser {

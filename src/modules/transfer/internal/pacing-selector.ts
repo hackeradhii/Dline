@@ -15,7 +15,7 @@ export const PACING_MODES: readonly PacingMode[] = ['legacy', 'shadow', 'flow'];
 /** How the budget is applied: per block (today's), or per paced chunk (Flow). */
 export type Actuator = 'block' | 'fine';
 
-export interface PacingSelectorDeps {
+interface PacingSelectorDeps {
   mode: PacingMode;
   legacy: RatePolicy;
   /** Flow's budget (its hold included); null in legacy mode. */

@@ -9,7 +9,7 @@ type BinaryKind = Exclude<AddressKind, typeof AddressKind.Text>;
 
 const MDNS_UUID = /^([0-9a-f]{8})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{12})\.local$/i;
 
-export type PackedAddress = { kind: BinaryKind; bytes: Uint8Array } | { kind: typeof AddressKind.Text; text: string };
+type PackedAddress = { kind: BinaryKind; bytes: Uint8Array } | { kind: typeof AddressKind.Text; text: string };
 
 export function packAddress(address: string): PackedAddress {
   const family = ipFamily(address);

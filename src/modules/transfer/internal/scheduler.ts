@@ -17,7 +17,7 @@ interface Job {
   block: Promise<Block>;
 }
 
-export interface SchedulerDeps {
+interface SchedulerDeps {
   hasher: BlockHasher;
   pacer: Pacer;
   /** Which budget and actuator apply; read once per block. */

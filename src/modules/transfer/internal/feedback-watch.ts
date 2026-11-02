@@ -4,7 +4,7 @@ import { Timeout, type Clock } from '../../../shared/timer';
 /** How long without an echo counts as a gap in the feedback (rule 8). */
 export const feedbackGapMs = (sRtt: number): number => Math.max(FLOW.feedbackGapRtts * sRtt, FLOW.feedbackTimeoutMs);
 
-export interface FeedbackWatchDeps {
+interface FeedbackWatchDeps {
   clock: Clock;
   /** A gap went by without an echo. */
   gap(now: number): void;

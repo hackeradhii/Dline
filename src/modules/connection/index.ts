@@ -10,4 +10,4 @@ export {
   type ManualExchange,
 } from './internal/connection';
 export { DataControlChannel } from './internal/control-channel';
-export { LanePool, type LanePoolOptions } from './internal/lanes';
+export { LanePool } from './internal/lanes';

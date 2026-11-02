@@ -7,7 +7,7 @@ export interface CandidateInfo {
   relayProtocol: string | undefined;
 }
 
-export type PathKind = 'lan' | 'internet' | 'relay';
+type PathKind = 'lan' | 'internet' | 'relay';
 
 export interface PathInfo {
   kind: PathKind;
@@ -33,7 +33,7 @@ export function classifyPath(local: CandidateInfo, remote: CandidateInfo): PathI
   return { kind, family, relayed, local, remote };
 }
 
-export const PATH_LABEL: Record<PathKind, string> = {
+const PATH_LABEL: Record<PathKind, string> = {
   lan: 'Direct on the same network',
   internet: 'Direct over the internet',
   relay: 'Relayed, not peer-to-peer',

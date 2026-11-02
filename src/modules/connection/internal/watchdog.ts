@@ -1,7 +1,7 @@
 import { CONNECTION } from '../../../shared/config';
 import { systemClock, Timeout, type Clock } from '../../../shared/timer';
 
-export interface WatchdogActions {
+interface WatchdogActions {
   /** Try an ICE restart (the path may come back, e.g. after Wi-Fi → mobile). */
   restart(): void;
   /** Give up: the user needs a new connection. */

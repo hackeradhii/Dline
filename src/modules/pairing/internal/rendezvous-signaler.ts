@@ -7,9 +7,9 @@ import { SIGNALING } from '../../../shared/config';
 import { Emitter, type Unsubscribe } from '../../../shared/emitter';
 import { Timeout } from '../../../shared/timer';
 
-export type SocketState = 'connecting' | 'open' | 'closed';
+type SocketState = 'connecting' | 'open' | 'closed';
 
-export interface RendezvousEvents {
+interface RendezvousEvents {
   joined: { role: Role; peer: boolean };
   presence: boolean;
   signal: Signal;
@@ -17,7 +17,7 @@ export interface RendezvousEvents {
   socket: SocketState;
 }
 
-export interface RendezvousOptions {
+interface RendezvousOptions {
   /** Page origin, e.g. https://dline.example (converted to ws/wss). */
   origin: string;
   code: string;

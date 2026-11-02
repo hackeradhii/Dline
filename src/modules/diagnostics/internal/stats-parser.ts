@@ -1,7 +1,7 @@
 import type { CandidateType } from '../../../shared/net';
 import { classifyPath, type CandidateInfo, type PathInfo } from './path';
 
-export interface VideoInfo {
+interface VideoInfo {
   width: number | null;
   height: number | null;
   fps: number | null;

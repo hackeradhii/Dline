@@ -21,7 +21,7 @@ import { Disposer } from '../../shared/emitter';
 import { clearFragment, KeepAwake, mediaDevices, onNetworkChange, pageBaseUrl, pageVisibility, switches } from '../browser';
 import { RoomState, type RoomParts } from './room.svelte';
 
-export type Screen =
+type Screen =
   | { name: 'home' }
   | { name: 'hosting'; code: string; shareUrl: string }
   | { name: 'joining'; code: string }

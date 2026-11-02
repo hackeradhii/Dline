@@ -5,7 +5,7 @@ import type { TransferError, TransferRecord } from './record';
 
 type Patch = Parameters<TransferRecord['update']>[0];
 
-export interface IncomingDeps {
+interface IncomingDeps {
   sink: Promise<FileSink>;
   hasher: BlockHasher;
   reply: (message: TransferControl) => void;

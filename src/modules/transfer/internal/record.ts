@@ -2,8 +2,8 @@ import { TRANSFER } from '../../../shared/config';
 import { systemClock, type Clock } from '../../../shared/timer';
 import { SpeedMeter } from './flow';
 
-export type TransferDirection = 'out' | 'in';
-export type TransferStatus = 'queued' | 'transferring' | 'verifying' | 'done' | 'failed' | 'cancelled';
+type TransferDirection = 'out' | 'in';
+type TransferStatus = 'queued' | 'transferring' | 'verifying' | 'done' | 'failed' | 'cancelled';
 
 /** Why a file failed; the app words it (`TRANSFER_ERROR_COPY`). */
 export type TransferError =

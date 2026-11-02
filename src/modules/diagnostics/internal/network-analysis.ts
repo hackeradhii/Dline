@@ -6,7 +6,7 @@ import { ipFamily, isGlobalIpv6, type ParsedCandidate } from '../../../shared/ne
  */
 
 /** none: no IPv4 public address learned; open: no NAT; cone: hole-punchable NAT; symmetric: strict NAT. */
-export type Ipv4Nat = 'none' | 'open' | 'cone' | 'symmetric';
+type Ipv4Nat = 'none' | 'open' | 'cone' | 'symmetric';
 export type Verdict = 'good' | 'risky' | 'blocked';
 
 export interface NetworkProfile {

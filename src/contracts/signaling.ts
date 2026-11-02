@@ -27,14 +27,14 @@ export const SignalSchema = v.variant('t', [
 ]);
 export type Signal = v.InferOutput<typeof SignalSchema>;
 
-export const ROLES = ['host', 'guest'] as const;
+const ROLES = ['host', 'guest'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const SERVER_ERRORS = ['room-full', 'no-room', 'bad-request', 'rate-limited', 'expired', 'replaced'] as const;
 export type ServerErrorCode = (typeof SERVER_ERRORS)[number];
 
 /** Messages the rendezvous server itself sends. */
-export const ServerEventSchema = v.variant('t', [
+const ServerEventSchema = v.variant('t', [
   v.object({ t: v.literal('joined'), role: v.picklist(ROLES), token: shortText(64), peer: v.boolean() }),
   v.object({ t: v.literal('peer'), present: v.boolean() }),
   v.object({ t: v.literal('error'), code: v.picklist(SERVER_ERRORS) }),

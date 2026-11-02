@@ -3,10 +3,9 @@ import { candidatesInSdp, parseCandidate, type ParsedCandidate } from '../../sha
 import { analyzeCandidates, type NetworkProfile } from './internal/network-analysis';
 
 export { StatsMonitor, type ConnectionSnapshot } from './internal/stats-monitor';
-export { classifyPath, describeCandidate, describePath, PATH_LABEL, type PathInfo, type PathKind, type CandidateInfo } from './internal/path';
-export type { VideoInfo } from './internal/stats-parser';
+export { describeCandidate, describePath, type PathInfo } from './internal/path';
 export { probeNetwork } from './internal/preflight';
-export { analyzeCandidates, diagnoseNoPath, type NetworkProfile, type NoPathCause, type Verdict, type Ipv4Nat } from './internal/network-analysis';
+export { diagnoseNoPath, type NetworkProfile, type NoPathCause, type Verdict } from './internal/network-analysis';
 export { safetyCode } from './internal/safety-code';
 
 /** Profiles the other side's network from the candidates it sent us (SDP + trickled). */

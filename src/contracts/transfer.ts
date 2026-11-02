@@ -20,7 +20,7 @@ const FileId = v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{8,32}$/));
 const BlockIndex = v.pipe(nonNegativeInt, v.maxValue(Math.ceil(TRANSFER.maxFileBytes / TRANSFER.minBlockBytes)));
 const Sha256Hex = v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/));
 
-export const FileOfferSchema = v.object({
+const FileOfferSchema = v.object({
   t: v.literal('file'),
   f: FileId,
   name: shortText(TRANSFER.maxNameLength),
@@ -39,7 +39,7 @@ export const TransferControlSchema = v.variant('t', [
 ]);
 export type TransferControl = v.InferOutput<typeof TransferControlSchema>;
 
-export const BlockHeaderSchema = v.object({
+const BlockHeaderSchema = v.object({
   t: v.literal('blk'),
   f: FileId,
   i: BlockIndex,
@@ -49,7 +49,7 @@ export const BlockHeaderSchema = v.object({
 export type BlockHeader = v.InferOutput<typeof BlockHeaderSchema>;
 
 /** Everything before this marker on its lane has arrived; answered with `flow-mark` (PLAN.md §5.3 rule 6). */
-export const LaneMarkSchema = v.object({ t: v.literal('mark'), m: nonNegativeInt });
+const LaneMarkSchema = v.object({ t: v.literal('mark'), m: nonNegativeInt });
 export type LaneMark = v.InferOutput<typeof LaneMarkSchema>;
 
 /** Text messages on a lane, between blocks. */

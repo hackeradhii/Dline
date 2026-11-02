@@ -26,7 +26,7 @@ export class MemorySink implements FileSink {
 }
 
 /** Large files: streamed to the browser's private file system, so a 1 GB video never sits in RAM. */
-export class OpfsSink implements FileSink {
+class OpfsSink implements FileSink {
   private constructor(
     private readonly dir: FileSystemDirectoryHandle,
     private readonly name: string,

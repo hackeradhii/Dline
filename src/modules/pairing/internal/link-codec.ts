@@ -13,7 +13,7 @@ import { buildSdp, extractCompact, readCompact, writeCompact, type SdpType } fro
 
 export type LinkKind = 'o' | 'a';
 
-export interface LinkPayload {
+interface LinkPayload {
   kind: LinkKind;
   /** Random per-invite ID; a reply must carry the same one. */
   session: string;
@@ -35,7 +35,7 @@ export function linkErrorReason(error: unknown): LinkErrorReason {
   return error instanceof LinkError ? error.reason : 'malformed';
 }
 
-export type Fragment = { kind: 'room'; code: string } | { kind: LinkKind; text: string } | null;
+type Fragment = { kind: 'room'; code: string } | { kind: LinkKind; text: string } | null;
 
 const SDP_TYPE: Record<LinkKind, SdpType> = { o: 'offer', a: 'answer' };
 const FullSchema = v.object({ v: v.number(), s: v.pipe(v.string(), v.regex(/^[0-9a-f]{8}$/)), sdp: v.string() });
