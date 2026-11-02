@@ -88,10 +88,22 @@ interface PageSample {
   /** Video bytes sent so far, and the height being sent (0 while none). */
   sentBytes: number;
   height: number;
+  /** Video frames and keyframes sent so far. */
+  framesSent: number;
+  keyFrames: number;
   /** The video received: frames per second, freezes so far. */
   fps: number;
   freezes: number;
   freezeSeconds: number;
+  /** Seconds so far the video sender's quality was limited, by reason (`outbound-rtp.qualityLimitationDurations`). */
+  limited: Limitation;
+}
+
+/** What limited the video sender's quality: seconds (in a sample) or a share of the span (in `VideoStats`). */
+export interface Limitation {
+  cpu: number;
+  bandwidth: number;
+  other: number;
 }
 
 declare global {
@@ -109,7 +121,20 @@ function samplePage(everyMs: number): void {
     void pc
       ?.getStats()
       .then((report) => {
-        const sample: PageSample = { at: performance.now(), rttMs: null, lost: 0, received: 0, sentBytes: 0, height: 0, fps: 0, freezes: 0, freezeSeconds: 0 };
+        const sample: PageSample = {
+          at: performance.now(),
+          rttMs: null,
+          lost: 0,
+          received: 0,
+          sentBytes: 0,
+          height: 0,
+          framesSent: 0,
+          keyFrames: 0,
+          fps: 0,
+          freezes: 0,
+          freezeSeconds: 0,
+          limited: { cpu: 0, bandwidth: 0, other: 0 },
+        };
         const stats = [...(report as unknown as Map<string, Record<string, unknown>>).values()];
         const pairId = stats.find((s) => s.type === 'transport')?.selectedCandidatePairId;
         const pair = stats.find((s) => s.id === pairId);
@@ -124,6 +149,10 @@ function samplePage(everyMs: number): void {
           if (s.type === 'outbound-rtp') {
             sample.sentBytes += n(s.bytesSent);
             sample.height = Math.max(sample.height, n(s.frameHeight));
+            sample.framesSent += n(s.framesSent);
+            sample.keyFrames += n(s.keyFramesEncoded);
+            const limited = (s.qualityLimitationDurations ?? {}) as Record<string, unknown>;
+            sample.limited = { cpu: n(limited.cpu), bandwidth: n(limited.bandwidth), other: n(limited.other) };
           }
           if (s.type === 'inbound-rtp') {
             sample.fps += n(s.framesPerSecond);
@@ -148,6 +177,8 @@ export interface VideoStats {
   freezes: number;
   /** Seconds frozen per minute of the span. */
   freezeSecondsPerMinute: number;
+  /** Share of the span the sender's quality was limited, by reason (0-1). */
+  limited: Limitation;
 }
 
 export type CallSpan = Record<Direction, VideoStats>;
@@ -158,12 +189,16 @@ function videoStats(sent: PageSample[], received: PageSample[]): VideoStats {
   const first = received[0];
   const last = received.at(-1);
   const minutes = first && last ? (last.at - first.at) / 60_000 : 0;
+  const [from, to] = [sent[0], sent.at(-1)];
+  const seconds = from && to ? (to.at - from.at) / 1000 : 0;
+  const share = (reason: keyof Limitation) => (from && to && seconds > 0 ? Math.max(0, to.limited[reason] - from.limited[reason]) / seconds : 0);
   return {
     bitrate: median(sent.slice(1).map((s, i) => bitsPerSecond(sent[i]!, s))),
     height: median(sent.map((s) => s.height)),
     fps: median(received.map((s) => s.fps)),
     freezes: first && last ? last.freezes - first.freezes : 0,
     freezeSecondsPerMinute: first && last && minutes > 0 ? (last.freezeSeconds - first.freezeSeconds) / minutes : 0,
+    limited: { cpu: share('cpu'), bandwidth: share('bandwidth'), other: share('other') },
   };
 }
 
@@ -172,6 +207,12 @@ export interface PageSecond {
   rttMs: number | null;
   lossPercent: number | null;
   videoMbps: number;
+  /** The video sent: frames per second, keyframes, and its height at the end of the second. */
+  sentFps: number;
+  keyFrames: number;
+  height: number;
+  /** Freezes of the video received that ended in that second. */
+  freezes: number;
 }
 
 /** A moment on both pages' own clocks (each page has its own time origin). */
@@ -207,7 +248,16 @@ export class PageProbe {
       while (i < samples.length && samples[i]!.at < from[side] + (s + 1) * 1000) end = samples[i++]!;
       const lost = end.lost - start.lost;
       const total = lost + end.received - start.received;
-      seconds.push({ rttMs: end.rttMs, lossPercent: total > 0 ? (100 * Math.max(0, lost)) / total : null, videoMbps: end.at > start.at ? bitsPerSecond(start, end) / 1e6 : 0 });
+      const span = (end.at - start.at) / 1000;
+      seconds.push({
+        rttMs: end.rttMs,
+        lossPercent: total > 0 ? (100 * Math.max(0, lost)) / total : null,
+        videoMbps: span > 0 ? bitsPerSecond(start, end) / 1e6 : 0,
+        sentFps: span > 0 ? (end.framesSent - start.framesSent) / span : 0,
+        keyFrames: end.keyFrames - start.keyFrames,
+        height: end.height,
+        freezes: end.freezes - start.freezes,
+      });
       start = end;
     }
     return seconds;

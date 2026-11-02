@@ -29,6 +29,8 @@ export interface BenchResult {
   timeline: TimelineSecond[];
   /** With a call: its video alone (the baseline) and during the transfer, per direction. */
   video?: { alone: CallSpan; during: CallSpan; ok: Record<Direction, boolean> };
+  /** With a call: the height of A's video, second by second, for a few seconds after the last file (Files first lifts its cap). */
+  restore?: number[];
   /** With TRACE=1: A's Flow trace, and when sending started on A's clock (the trace's `t` is on it too). */
   trace?: { file: string; sendingAtMs: number };
 }
@@ -44,6 +46,12 @@ export interface TimelineSecond {
   lossPercent: number | null;
   /** A's video send rate. */
   videoMbps: number;
+  /** A's video sent: frames per second, keyframes, height at the end of the second. */
+  sentFps: number;
+  keyFrames: number;
+  height: number;
+  /** Freezes of A's video seen by B that ended in that second. */
+  freezesAtB: number;
 }
 
 /** The call's share of the link that files are measured against (PLAN.md §2.1: link − 2.5 Mbit/s). */

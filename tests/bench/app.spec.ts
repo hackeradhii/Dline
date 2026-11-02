@@ -24,6 +24,8 @@ const MB = 1024 * 1024;
 /** A new call's video takes ~20 s to ramp up to its ceiling (bandwidth estimation starts low). */
 const CALL_WARMUP_MS = 20_000;
 const CALL_ALONE_MS = 10_000;
+/** After the last file: how long A's video is watched for Files first to lift its cap (PLAN-FILES-FIRST FF6: above 360p within 5 s). */
+const RESTORE_MS = 6_000;
 const wanted = (process.env.BENCH ?? 'lan,mobile,far,clean').split(',');
 const withCall = process.env.CALL === '1';
 const traced = process.env.TRACE === '1';
@@ -87,12 +89,13 @@ function asRun(c: (typeof cases)[number]): { key: string; scenario: Scenario } {
 
 /** Second by second: the a → b link, its deepest queue, and what A itself reads (round trip, inbound loss, video sent). */
 const describeTimeline = (timeline: TimelineSecond[]) =>
-  ['  s  link Mbit/s  queue ms  A rtt ms  A loss %  A video Mbit/s']
+  ['  s  link Mbit/s  queue ms  A rtt ms  A loss %  A video Mbit/s  sent fps  key  height  B freezes']
     .concat(
       timeline.map(
         (s) =>
           `${String(s.t).padStart(3)}  ${s.linkMbps.toFixed(2).padStart(11)}  ${s.queueMs.toFixed(0).padStart(8)}  ${(s.rttMs?.toFixed(0) ?? '-').padStart(8)}  ` +
-          `${(s.lossPercent?.toFixed(1) ?? '-').padStart(8)}  ${s.videoMbps.toFixed(2).padStart(14)}`,
+          `${(s.lossPercent?.toFixed(1) ?? '-').padStart(8)}  ${s.videoMbps.toFixed(2).padStart(14)}  ${s.sentFps.toFixed(0).padStart(8)}  ` +
+          `${String(s.keyFrames).padStart(3)}  ${String(s.height).padStart(6)}  ${String(s.freezesAtB).padStart(9)}`,
       ),
     )
     .join('\n');
@@ -125,13 +128,16 @@ for (const c of cases.filter((x) => wanted.includes(x.key))) {
       const sent = await probe.mark();
       const during = alone ? await probe.span(sending, sent) : null;
       const queueMs = queue.stop();
-      const views = await probe.seconds('a', sending, sent);
-      const timeline: TimelineSecond[] = queue.seconds.map((link, t) => ({
-        t,
-        linkMbps: link.aToB.mbps,
-        queueMs: link.aToB.queueMaxMs,
-        ...(views[t] ?? { rttMs: null, lossPercent: null, videoMbps: 0 }),
-      }));
+      const [views, seen] = await Promise.all([probe.seconds('a', sending, sent), probe.seconds('b', sending, sent)]);
+      const timeline: TimelineSecond[] = queue.seconds.map((link, t) => {
+        const { freezes: _, ...view } = views[t] ?? { rttMs: null, lossPercent: null, videoMbps: 0, sentFps: 0, keyFrames: 0, height: 0, freezes: 0 };
+        return { t, linkMbps: link.aToB.mbps, queueMs: link.aToB.queueMaxMs, ...view, freezesAtB: seen[t]?.freezes ?? 0 };
+      });
+      let restore: number[] | undefined;
+      if (withCall) {
+        await a.waitForTimeout(RESTORE_MS);
+        restore = (await probe.seconds('a', sent, await probe.mark())).map((s) => s.height);
+      }
 
       const bytes = (c.videoMb + c.photos) * MB;
       const link = netem.stats();
@@ -147,6 +153,7 @@ for (const c of cases.filter((x) => wanted.includes(x.key))) {
         link,
         connections: peers,
         timeline,
+        ...(restore ? { restore } : {}),
         ...(alone && during ? { video: { alone, during, ok: { aToB: callOk(alone.aToB, during.aToB), bToA: callOk(alone.bToA, during.bToA) } } } : {}),
         ...(trace ? { trace } : {}),
       });
