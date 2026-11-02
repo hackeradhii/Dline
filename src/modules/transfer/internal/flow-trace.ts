@@ -21,10 +21,15 @@ export interface TraceRecord {
   /** Media send rate, bits/s. */
   media: number;
   lanes: number;
+  /** Queueing-delay target and the path's own noise, ms. */
+  target: number;
+  noise: number;
+  /** What the call reserve keeps, bytes/s; null while it is off or the bottleneck unknown. */
+  reserve: number | null;
 }
 
 /** One validation drain: when it held writes, and whether it proved the base (else it failed safe). */
-export interface DrainRecord {
+interface DrainRecord {
   start: number;
   end: number;
   validated: boolean;
@@ -60,7 +65,7 @@ export class FlowTrace {
     return this.#drains;
   }
 
-  toJSON(): { version: 1; windowMs: number; records: readonly TraceRecord[]; drains: readonly DrainRecord[] } {
-    return { version: 1, windowMs: FLOW.traceWindowMs, records: this.#records, drains: this.#drains };
+  toJSON(): { version: 2; windowMs: number; records: readonly TraceRecord[]; drains: readonly DrainRecord[] } {
+    return { version: 2, windowMs: FLOW.traceWindowMs, records: this.#records, drains: this.#drains };
   }
 }

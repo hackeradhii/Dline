@@ -1,19 +1,18 @@
 import type { BlockHasher, ControlChannel, Lane, LaneSource } from '../../../contracts/ports';
-import type { BlockHeader, FileOffer, TransferControl } from '../../../contracts/transfer';
+import type { TransferControl } from '../../../contracts/transfer';
 import { randomId } from '../../../shared/bytes';
 import { TRANSFER } from '../../../shared/config';
 import { Disposer, Emitter } from '../../../shared/emitter';
-import { alwaysVisible, monotonicClock, systemClock, type Clock, type Visibility } from '../../../shared/timer';
-import { EarlyBlocks } from './early-blocks';
+import { alwaysVisible, monotonicClock, systemClock, Timeout, type Clock, type Visibility } from '../../../shared/timer';
 import { Pacer } from './flow';
 import { FlowSession, type FlowSessionInputs, type PacingStatus } from './flow-session';
 import type { FlowTrace } from './flow-trace';
 import { BlockReader } from './framing';
 import { webCryptoHasher } from './hasher';
-import { IncomingFile } from './incoming';
 import { OutgoingFile } from './outgoing';
 import type { PacingMode } from './pacing-selector';
 import type { RatePolicy } from './rate-policy';
+import { Receiver } from './receiver';
 import { TransferRecord, type TransferItem } from './record';
 import { BlockScheduler } from './scheduler';
 import { defaultSinkFactory, type SinkFactory } from './sinks';
@@ -39,27 +38,35 @@ const NO_BUDGET: RatePolicy = { limit: null };
 
 /**
  * Sends files in order with no gap between them, spreading each file's blocks over all lanes, and
- * receives any number at once. Emits `changed` whenever an item's progress or status changes.
+ * hands what arrives to the `Receiver`. Emits `changed` whenever an item's progress or status changes.
  */
 export class TransferManager {
-  readonly events = new Emitter<{ changed: TransferItem }>();
+  /**
+   * `sending`: whether outgoing files are queued or unacknowledged, held for `TRANSFER.sendingHoldMs`
+   * after the last one so files sent one after another read as one send (Files first follows it).
+   */
+  readonly events = new Emitter<{ changed: TransferItem; sending: boolean }>();
   readonly #outgoing = new Map<string, OutgoingFile>();
-  readonly #incoming = new Map<string, IncomingFile>();
-  /** Incoming files that ended (or were cancelled before their offer arrived). */
-  readonly #ended = new Set<string>();
-  readonly #early = new EarlyBlocks();
+  readonly #receiver: Receiver;
   readonly #flow: FlowSession;
   readonly #scheduler: BlockScheduler;
   readonly #pacer: Pacer;
-  readonly #hasher: BlockHasher;
-  readonly #sinks: SinkFactory;
   readonly #clock: Clock;
   readonly #disposer = new Disposer();
+  #sending = false;
+  readonly #sendingHold: Timeout;
 
   constructor(private readonly deps: TransferDeps) {
-    this.#hasher = deps.hasher ?? webCryptoHasher;
-    this.#sinks = deps.sinks ?? defaultSinkFactory;
+    const hasher = deps.hasher ?? webCryptoHasher;
     this.#clock = deps.clock ?? systemClock;
+    this.#receiver = new Receiver({
+      sinks: deps.sinks ?? defaultSinkFactory,
+      hasher,
+      clock: this.#clock,
+      reply: (m) => this.#send(m),
+      record: (init) => this.#record(init),
+    });
+    this.#sendingHold = new Timeout(this.#clock);
     const flowClock = deps.flowClock ?? deps.clock ?? monotonicClock;
     const visibility = deps.visibility ?? alwaysVisible;
     this.#flow = new FlowSession({
@@ -76,7 +83,7 @@ export class TransferManager {
     const selector = this.#flow.selector;
     this.#pacer = new Pacer(() => selector.limit, flowClock, visibility);
     this.#scheduler = new BlockScheduler({
-      hasher: this.#hasher,
+      hasher,
       pacer: this.#pacer,
       pacing: selector,
       clock: this.#clock,
@@ -90,7 +97,7 @@ export class TransferManager {
 
     const { control, lanes } = deps;
     const on = this.#disposer.add.bind(this.#disposer);
-    on(control.on('file', (offer) => this.#onOffer(offer)));
+    on(control.on('file', (offer) => this.#receiver.offer(offer)));
     on(control.on('file-ack', ({ f, i }) => this.#onAck(f, i)));
     on(control.on('file-done', ({ f, ok }) => this.#onDone(f, ok)));
     on(control.on('file-cancel', ({ f }) => this.#onCancelled(f)));
@@ -98,6 +105,7 @@ export class TransferManager {
     on(lanes.onLane((lane) => this.#attach(lane)));
     const watchdog = this.#clock.setInterval(() => this.#checkStalls(), TRANSFER.stallCheckMs);
     on(() => this.#clock.clearInterval(watchdog));
+    on(() => this.#sendingHold.clear());
   }
 
   send(files: Iterable<File>): void {
@@ -114,7 +122,7 @@ export class TransferManager {
   cancel(id: string): void {
     const outgoing = this.#outgoing.get(id);
     if (outgoing) this.#endOutgoing(outgoing, { status: 'cancelled' }, outgoing.started);
-    this.#incoming.get(id)?.cancel();
+    this.#receiver.cancel(id);
   }
 
   /** Actual upload rate of files right now (bytes/second). */
@@ -140,9 +148,8 @@ export class TransferManager {
   dispose(): void {
     this.#disposer.dispose();
     for (const outgoing of [...this.#outgoing.values()]) this.#endOutgoing(outgoing, { status: 'cancelled' }, outgoing.started);
-    for (const incoming of [...this.#incoming.values()]) incoming.cancel();
+    this.#receiver.dispose();
     this.#scheduler.close();
-    this.#early.clear();
     this.#flow.dispose();
   }
 
@@ -151,7 +158,7 @@ export class TransferManager {
   #attach(lane: Lane): void {
     const { responder } = this.#flow;
     const reader = new BlockReader(
-      (header, data) => this.#onBlock(header, data),
+      (header, data) => this.#receiver.block(header, data),
       (m) => responder.marked(m, lane.id),
     );
     const onMessage = ({ data }: MessageEvent) => {
@@ -168,32 +175,6 @@ export class TransferManager {
       { once: true },
     );
     this.#scheduler.addLane(lane);
-  }
-
-  // ── Receiving ─────────────────────────────────────────────────────────────
-
-  #onOffer(offer: FileOffer): void {
-    if (this.#incoming.has(offer.f) || this.#ended.has(offer.f)) return;
-    const record = this.#record({ id: offer.f, direction: 'in', name: offer.name, size: offer.size, mime: offer.mime });
-    const incoming = new IncomingFile(offer, record, {
-      sink: this.#sinks(offer.f, offer.size, offer.mime),
-      hasher: this.#hasher,
-      reply: (m) => this.#send(m),
-      onEnd: () => {
-        this.#incoming.delete(offer.f);
-        this.#ended.add(offer.f); // Late blocks (re-sent copies) are dropped, not held.
-      },
-    });
-    this.#incoming.set(offer.f, incoming);
-    const early = this.#early.take(offer.f);
-    if (early[0]) record.update({ startedAt: early[0].at }); // Time from the first byte, not the offer.
-    for (const { header, data } of early) incoming.accept(header, data);
-  }
-
-  #onBlock(header: BlockHeader, data: ArrayBuffer): void {
-    const incoming = this.#incoming.get(header.f);
-    if (incoming) return incoming.accept(header, data);
-    if (!this.#ended.has(header.f)) this.#early.hold(header, data, this.#clock.now());
   }
 
   // ── Sending ───────────────────────────────────────────────────────────────
@@ -219,12 +200,7 @@ export class TransferManager {
   #onCancelled(id: string): void {
     const outgoing = this.#outgoing.get(id);
     if (outgoing) this.#endOutgoing(outgoing, { status: 'cancelled' }, false);
-    const incoming = this.#incoming.get(id);
-    if (incoming) incoming.cancelledByPeer();
-    else {
-      this.#ended.add(id); // Cancelled before its offer arrived.
-      this.#early.take(id);
-    }
+    this.#receiver.cancelledByPeer(id);
   }
 
   #checkStalls(): void {
@@ -245,9 +221,23 @@ export class TransferManager {
     this.#updateSending();
   }
 
-  /** Flow probes fast only while blocks are queued or unacknowledged. */
+  /** Flow probes fast only while blocks are queued or unacknowledged; `sending` stops only after the hold. */
   #updateSending(): void {
-    this.#flow.sending([...this.#outgoing.values()].some((file) => !file.complete));
+    const sending = [...this.#outgoing.values()].some((file) => !file.complete);
+    this.#flow.sending(sending);
+    if (sending) {
+      this.#sendingHold.clear();
+      this.#emitSending(true);
+    } else if (this.#sending && !this.#sendingHold.pending) {
+      // Without the hold, the gap before the next file lifted the video cap and set it again: the encoder froze and fell to 180p (bench ff5, cell-down).
+      this.#sendingHold.set(() => this.#emitSending(false), TRANSFER.sendingHoldMs);
+    }
+  }
+
+  #emitSending(sending: boolean): void {
+    if (sending === this.#sending) return;
+    this.#sending = sending;
+    this.events.emit('sending', sending);
   }
 
   #send(message: TransferControl): void {

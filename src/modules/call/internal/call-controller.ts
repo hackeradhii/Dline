@@ -1,7 +1,9 @@
 import type { ControlChannel, MediaDevicesPort, TransceiverHost } from '../../../contracts/ports';
+import { MEDIA } from '../../../shared/config';
 import { Disposer, Emitter } from '../../../shared/emitter';
 import { LocalMedia, MediaError, type MediaFailure } from './local-media';
-import { TransceiverSlots, type MediaKind } from './transceiver-slots';
+import { TransceiverSlots, type MediaKind, type VideoCap } from './transceiver-slots';
+import { VideoCapper } from './video-capper';
 
 export type CallState = 'idle' | 'outgoing' | 'incoming' | 'active';
 export type CallNotice = 'declined' | 'ended' | 'busy' | MediaFailure;
@@ -11,13 +13,15 @@ export interface MediaFlags {
   video: boolean;
 }
 
-export interface CallEvents {
+interface CallEvents {
   state: CallState;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   localMedia: MediaFlags;
   remoteMedia: MediaFlags;
   notice: CallNotice;
+  /** The video cap actually applied to the sender right now (null: none). */
+  videoCap: VideoCap | null;
 }
 
 const OFF: MediaFlags = { audio: false, video: false };
@@ -34,6 +38,7 @@ export class CallController {
   #state: CallState = 'idle';
   #isCaller = false;
   #flags: MediaFlags = OFF;
+  readonly #capper: VideoCapper;
 
   constructor(
     private readonly control: ControlChannel,
@@ -42,6 +47,11 @@ export class CallController {
   ) {
     this.#media = new LocalMedia(devices);
     this.#slots = new TransceiverSlots(host);
+    this.#capper = new VideoCapper(
+      this.#slots,
+      () => (this.#state === 'active' ? this.#media.video : null),
+      (cap) => this.events.emit('videoCap', cap),
+    );
     this.#disposer.add(control.on('ring', () => this.#onRing()));
     this.#disposer.add(control.on('accept', () => void this.#onAccepted()));
     this.#disposer.add(control.on('decline', () => this.#end('declined')));
@@ -98,6 +108,7 @@ export class CallController {
     const track = await this.#media.setCameraEnabled(!this.#flags.video);
     this.#flags = { ...this.#flags, video: track !== null };
     await this.#slots.replace('video', track);
+    void this.#capper.sync();
     this.#emitLocal();
     this.#announceMedia();
   }
@@ -105,7 +116,17 @@ export class CallController {
   async flipCamera(): Promise<void> {
     if (!this.#flags.video) return;
     await this.#slots.replace('video', await this.#media.flip());
+    void this.#capper.sync();
     this.#emitLocal();
+  }
+
+  /**
+   * Files first (PLAN-FILES-FIRST): while we send files, our camera goes out at most at
+   * `MEDIA.filesFirst`, during a call only. Applied in order and again after every track change;
+   * `videoCap` reports what is actually applied. Receiving alone never caps.
+   */
+  setSendingFiles(sending: boolean): Promise<void> {
+    return this.#capper.want(sending ? MEDIA.filesFirst : null);
   }
 
   dispose(): void {
@@ -139,6 +160,7 @@ export class CallController {
     // Start both before awaiting: directions are set synchronously, so a callee answering inside
     // `ontrack` already advertises sendrecv for both and no extra negotiation round is needed.
     await Promise.all((['audio', 'video'] as const).map((kind) => this.#slots.attach(kind, tracks[kind], this.#isCaller)));
+    void this.#capper.sync();
     if (this.#slots.ready) this.events.emit('remoteStream', this.#slots.remoteStream());
   }
 
@@ -165,6 +187,7 @@ export class CallController {
     this.events.emit('remoteMedia', OFF);
     if (notice) this.events.emit('notice', notice);
     await this.#slots.park();
+    await this.#capper.sync();
   }
 
   #emitLocal(): void {
@@ -181,5 +204,6 @@ export class CallController {
     if (state === this.#state) return;
     this.#state = state;
     this.events.emit('state', state);
+    void this.#capper.sync(); // The cap applies only while a call is active: a call started mid-send gets it.
   }
 }

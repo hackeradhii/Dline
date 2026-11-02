@@ -1,6 +1,6 @@
-import type { ControlMessage, ControlOf, ControlType } from '../../contracts/control';
+import type { ControlEvents, ControlMessage, ControlOf, ControlType } from '../../contracts/control';
 import type { ControlChannel } from '../../contracts/ports';
-import type { Unsubscribe } from '../emitter';
+import { Emitter, type Unsubscribe } from '../emitter';
 import type { FakeClock } from './fake-clock';
 
 /**
@@ -18,6 +18,11 @@ export interface BottleneckOptions {
   /** Most backlog the bottleneck holds, in ms at the current capacity. */
   bufferMs: number;
   forwardDelayMs: number;
+  /**
+   * Extra forward delay at time t that no queue of ours causes (a cellular uplink's scheduling and
+   * retransmissions). Packets still arrive in order, like a radio link's in-order delivery.
+   */
+  forwardJitterMs?: (t: number) => number;
   /** One-way delay of the reverse path at time t; a changing value models a reverse-path queue. */
   reverseDelayMs?: (t: number) => number;
   /** Media sharing the bottleneck, bits/second at time t. */
@@ -82,6 +87,7 @@ export class FakeBottleneck {
   #cursor = 0;
   readonly #forward: Array<{ at: number; packet: Packet }> = [];
   #forwardHead = 0;
+  #lastForwardAt = 0;
   readonly #reverse: Array<{ at: number; arrive: () => void }> = [];
   #reverseHead = 0;
   #lastReverseAt = 0;
@@ -180,7 +186,9 @@ export class FakeBottleneck {
       this.#headServed = 0;
       this.#head++;
       this.#queuedBytes -= packet.bytes;
-      this.#forward.push({ at: t + this.options.forwardDelayMs, packet });
+      const at = Math.max(this.#lastForwardAt, t + this.options.forwardDelayMs + (this.options.forwardJitterMs?.(t) ?? 0));
+      this.#lastForwardAt = at;
+      this.#forward.push({ at, packet });
     }
     if (this.#head > 4096) {
       this.#queue.splice(0, this.#head);
@@ -213,7 +221,7 @@ type Carry = (arrive: () => void) => void;
 export class SimControl implements ControlChannel {
   /** While false, sends fail, as on a channel that isn't open yet. */
   isOpen = true;
-  readonly #handlers = new Map<ControlType, Set<(message: ControlMessage) => void>>();
+  readonly #handlers = new Emitter<ControlEvents>();
   /** Drops messages of these types on their way out (a peer that stops answering). */
   readonly mute = new Set<ControlType>();
   peer: SimControl | null = null;
@@ -248,14 +256,10 @@ export class SimControl implements ControlChannel {
   }
 
   on<T extends ControlType>(type: T, handler: (message: ControlOf<T>) => void): Unsubscribe {
-    const set = this.#handlers.get(type) ?? new Set();
-    this.#handlers.set(type, set);
-    const h = handler as (message: ControlMessage) => void;
-    set.add(h);
-    return () => set.delete(h);
+    return this.#handlers.on(type, handler);
   }
 
   #dispatch(message: ControlMessage): void {
-    for (const handler of [...(this.#handlers.get(message.t) ?? [])]) handler(message);
+    this.#handlers.emit(message.t, message);
   }
 }

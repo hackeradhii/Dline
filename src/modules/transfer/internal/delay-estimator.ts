@@ -6,6 +6,14 @@ import type { FlowSample } from './flow-probe';
 export interface DelayReading {
   /** Forward queueing delay of this sample after the jitter filter, ms. */
   qd: number;
+  /**
+   * The same before the filter, and above the shortest one-way delay of the last `noiseBaseWindowMs`
+   * rather than of `baseWindowMs`: the path's own noise is measured on this. The filter takes the
+   * smaller of two probes, which hides more of a radio's jitter for idle probes (a second apart) than
+   * for probes 40 ms apart; and over the long base, 200 ppm of clock drift alone read as 12 ms of
+   * noise and switched the call reserve off on a clean link (RESERVE-06).
+   */
+  qdRaw: number;
   /** Averaged queueing delay: drops at once, rises with gain `FLOW.qdGainUp` (SCReAM §4.2.1.4). */
   qdAvg: number;
   /** Smoothed round trip, ms. */
@@ -14,6 +22,8 @@ export interface DelayReading {
   baseRtt: number;
   /** A drain's clean samples are in: the base was measured on an empty path. */
   validated: boolean;
+  /** This sample crossed an empty path (an idle probe, or one sent after a drain emptied every lane): its `qd` is the path's own noise. */
+  clean: boolean;
 }
 
 /**
@@ -31,6 +41,7 @@ export interface DelayReading {
 export class DelayEstimator {
   readonly #baseOwd = new Windowed('min', FLOW.baseWindowMs, FLOW.baseBuckets);
   readonly #baseRtt = new Windowed('min', FLOW.baseWindowMs, FLOW.baseBuckets);
+  readonly #recentOwd = new Windowed('min', FLOW.noiseBaseWindowMs, FLOW.noiseBaseBuckets);
   readonly #recent: number[] = [];
   #sRtt: number | null = null;
   #qdAvg = 0;
@@ -58,14 +69,17 @@ export class DelayEstimator {
     const { at, rttMs, owdMs } = sample;
     this.#baseOwd.add(owdMs, at);
     this.#baseRtt.add(rttMs, at);
+    this.#recentOwd.add(owdMs, at);
     this.#sRtt = this.#sRtt === null ? rttMs : this.#sRtt + FLOW.rttGain * (rttMs - this.#sRtt);
+    const clean = sample.idle || (this.#cleanFrom !== null && sample.sentAt >= this.#cleanFrom);
     const validated = this.#clean(sample);
 
     this.#recent.push(Math.max(0, owdMs - this.#baseOwd.value(at)!));
+    const qdRaw = Math.max(0, owdMs - this.#recentOwd.value(at)!);
     if (this.#recent.length > FLOW.jitterSamples) this.#recent.shift();
     const qd = Math.min(...this.#recent);
     this.#qdAvg = qd < this.#qdAvg ? qd : this.#qdAvg + FLOW.qdGainUp * (qd - this.#qdAvg);
-    return { qd, qdAvg: this.#qdAvg, sRtt: this.#sRtt, baseRtt: this.#baseRtt.value(at)!, validated };
+    return { qd, qdRaw, qdAvg: this.#qdAvg, sRtt: this.#sRtt, baseRtt: this.#baseRtt.value(at)!, validated, clean };
   }
 
   /** A drain proved every lane empty at `at` (on the sender's clock): probes sent from then on are clean. */
@@ -83,6 +97,7 @@ export class DelayEstimator {
   reset(): void {
     this.#baseOwd.reset();
     this.#baseRtt.reset();
+    this.#recentOwd.reset();
     this.#recent.length = 0;
     this.#sRtt = null;
     this.#qdAvg = 0;

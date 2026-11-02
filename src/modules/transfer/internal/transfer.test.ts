@@ -143,6 +143,15 @@ function finals(manager: TransferManager): Map<string, TransferItem> {
   return items;
 }
 
+/** Sends `file` and checks it arrives done, verified and byte for byte the same. */
+async function arrivesIntact(sender: TransferManager, receiver: TransferManager, file: File): Promise<void> {
+  const received = final(receiver);
+  sender.send([file]);
+  const item = await received;
+  expect(item).toMatchObject({ status: 'done', verified: true });
+  expect(await sha(item.file!)).toBe(await sha(file));
+}
+
 /** Resolves with the first final state of the item called `name` (any direction if omitted). */
 function final(manager: TransferManager, name?: string): Promise<TransferItem> {
   return new Promise((resolve) =>
@@ -172,11 +181,7 @@ describe('file transfer', () => {
   it('falls back to the main connection alone', async () => {
     const { sender, receiver } = await setup({ lanes: 1 });
     const file = randomFile(700_000);
-    const received = final(receiver);
-    sender.send([file]);
-    const item = await received;
-    expect(item).toMatchObject({ status: 'done', verified: true });
-    expect(await sha(item.file!)).toBe(await sha(file));
+    await arrivesIntact(sender, receiver, file);
   });
 
   it('flags a block damaged in transit', async () => {
@@ -200,6 +205,38 @@ describe('file transfer', () => {
     sender.send([randomFile(0, 'empty.jpg', 'image/jpeg')]);
     expect(await received).toMatchObject({ status: 'done', verified: true, size: 0 });
     expect(await sent).toMatchObject({ status: 'done', verified: true });
+  });
+
+  it('says when outgoing files start and stop going out, once each, and never for files received (Files first, FF2)', async () => {
+    const clock = new FakeClock();
+    const { sender, receiver } = await setup({ clock, hasher: nodeHasher });
+    const out: boolean[] = [];
+    const inn: boolean[] = [];
+    sender.events.on('sending', (s) => out.push(s));
+    receiver.events.on('sending', (s) => inn.push(s));
+    const done = finals(sender);
+    sender.send([randomFile(200_000, 'a.jpg'), randomFile(200_000, 'b.jpg')]);
+    await until(clock, () => done.size === 2);
+    expect(out).toEqual([true]); // Held: another file may follow.
+    await run(clock, TRANSFER.sendingHoldMs);
+    expect(out).toEqual([true, false]);
+    expect(inn).toEqual([]);
+  });
+
+  it('a file sent soon after the last one keeps it one send: the video cap is not lifted and set again in the gap', async () => {
+    // Lifting the cap for the gap asked the encoder for 720p on a low estimate: it froze and fell to 180p (bench ff5, cell-down).
+    const clock = new FakeClock();
+    const { sender } = await setup({ clock, hasher: nodeHasher });
+    const out: boolean[] = [];
+    sender.events.on('sending', (s) => out.push(s));
+    const done = finals(sender);
+    sender.send([randomFile(200_000, 'video.mp4')]);
+    await until(clock, () => done.size === 1);
+    await run(clock, TRANSFER.sendingHoldMs / 2);
+    sender.send([randomFile(200_000, 'photo.jpg')]);
+    await until(clock, () => done.size === 2);
+    await run(clock, TRANSFER.sendingHoldMs);
+    expect(out).toEqual([true, false]);
   });
 
   it('sends a batch back to back, every file intact', async () => {
@@ -227,24 +264,14 @@ describe('file transfer', () => {
     const file = randomFile(2 * 1024 * 1024);
     const doomed = paths.b.lanes[1]!.channel;
     doomed.addEventListener('message', () => doomed.close(), { once: true });
-    const received = final(receiver);
-    sender.send([file]);
-
-    const item = await received;
-    expect(item).toMatchObject({ status: 'done', verified: true });
-    expect(await sha(item.file!)).toBe(await sha(file));
+    await arrivesIntact(sender, receiver, file);
   });
 
   it('does not wait on a stalled lane at the end of a file: idle lanes carry copies of its blocks', async () => {
     const { sender, receiver, paths } = await setup({ lanes: 4 });
     paths.channels[1]![0].latencyMs = 60_000; // Stuck in loss recovery for longer than the test runs.
     const file = randomFile(1024 * 1024);
-    const received = final(receiver);
-    sender.send([file]);
-
-    const item = await received;
-    expect(item).toMatchObject({ status: 'done', verified: true });
-    expect(await sha(item.file!)).toBe(await sha(file));
+    await arrivesIntact(sender, receiver, file);
   });
 
   it('sends a block again when the receiver never got it (e.g. it had no room to hold it)', async () => {
@@ -272,11 +299,7 @@ describe('file transfer', () => {
   it('holds blocks that arrive before their file is announced', async () => {
     const { sender, receiver } = await setup({ controlLatencyMs: 30 });
     const file = randomFile(500_000);
-    const received = final(receiver);
-    sender.send([file]);
-    const item = await received;
-    expect(item).toMatchObject({ status: 'done', verified: true });
-    expect(await sha(item.file!)).toBe(await sha(file));
+    await arrivesIntact(sender, receiver, file);
   });
 
   it('lets the receiver cancel', async () => {

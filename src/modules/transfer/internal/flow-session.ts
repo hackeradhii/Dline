@@ -36,7 +36,7 @@ export interface PacingStatus {
   pingMs: number | null;
 }
 
-export interface FlowSessionDeps {
+interface FlowSessionDeps {
   mode: PacingMode;
   control: ControlChannel;
   /** Today's policy, in force unless Flow is. */
@@ -75,7 +75,7 @@ export class FlowSession {
   readonly #delivery: SpeedMeter;
   readonly #recentDelivery: SpeedMeter;
   readonly #disposer = new Disposer();
-  #inputs: Omit<FlowSessionInputs, 'pathRttMs'> = { callActive: false, videoOn: false, mediaSendBps: 0, pathKey: null };
+  #inputs: Omit<FlowSessionInputs, 'pathRttMs'> = { callActive: false, videoOn: false, mediaSendBps: 0, videoCapBps: null, pathKey: null };
   #sending = false;
   #lastWriteAt = -Infinity;
   #lastSample: FlowSample | null = null;
@@ -239,6 +239,9 @@ export class FlowSession {
       call: this.#inputs.callActive,
       media: this.#inputs.mediaSendBps,
       lanes: this.deps.laneCount(),
+      target: decision.targetMs,
+      noise: decision.noiseMs,
+      reserve: decision.reserveBytesPerSecond,
     });
   }
 }

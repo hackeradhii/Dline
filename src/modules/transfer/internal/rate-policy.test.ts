@@ -129,7 +129,7 @@ function flowUnderTest(wrap: (flow: FlowController, clock: FakeClock) => RatePol
   flow.sending(true, clock.now() - FLOW.deliveryWindowMs, 5); // A near path: it starts unlimited, like every policy.
   const echo = (qdAvg: number) => {
     clock.advance(FLOW.probeIntervalMs);
-    flow.update({ qd: qdAvg, qdAvg, sRtt: 50, baseRtt: 50, validated: false }, { bytesPerSecond: 4 * MB, recentBytesPerSecond: 4 * MB, since: null }, clock.now());
+    flow.update({ qd: qdAvg, qdRaw: qdAvg, qdAvg, sRtt: 50, baseRtt: 50, validated: false, clean: false }, { bytesPerSecond: 4 * MB, recentBytesPerSecond: 4 * MB, since: null }, clock.now());
   };
   return {
     policy: wrap(flow, clock),

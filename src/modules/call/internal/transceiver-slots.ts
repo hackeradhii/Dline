@@ -1,6 +1,12 @@
 import type { TransceiverHost } from '../../../contracts/ports';
 
 export type MediaKind = 'audio' | 'video';
+
+/** The most video to send: its shorter side (360 for 360p) and its bitrate. */
+export interface VideoCap {
+  maxShortSide: number;
+  maxBitrateBps: number;
+}
 const KINDS: readonly MediaKind[] = ['audio', 'video'];
 
 /**
@@ -43,6 +49,32 @@ export class TransceiverSlots {
       if (!transceiver) continue;
       await transceiver.sender.replaceTrack(null);
       transceiver.direction = 'inactive';
+    }
+  }
+
+  /**
+   * Applies `cap` to the video sender (null lifts it) through its encoding parameters: no
+   * renegotiation. The downscale is taken from `track`'s own size. Returns whether it was applied.
+   */
+  async capVideo(cap: VideoCap | null, track: MediaStreamTrack | null): Promise<boolean> {
+    const sender = this.find('video')?.sender;
+    const parameters = sender?.getParameters();
+    const encoding = parameters?.encodings?.[0];
+    if (!sender || !parameters || !encoding) return false;
+    if (cap) {
+      const { width, height } = track?.getSettings() ?? {};
+      const shortSide = Math.min(width ?? cap.maxShortSide, height ?? cap.maxShortSide);
+      encoding.maxBitrate = cap.maxBitrateBps;
+      encoding.scaleResolutionDownBy = Math.max(1, shortSide / cap.maxShortSide);
+    } else {
+      delete encoding.maxBitrate;
+      encoding.scaleResolutionDownBy = 1;
+    }
+    try {
+      await sender.setParameters(parameters);
+      return true;
+    } catch {
+      return false; // Not supported here: the call goes on uncapped.
     }
   }
 

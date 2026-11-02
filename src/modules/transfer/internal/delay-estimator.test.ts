@@ -43,6 +43,20 @@ describe('DelayEstimator: forward queueing delay', () => {
     }
   });
 
+  it('measures the path noise free of clock drift: at 200 ppm a clean, steady path stays well under the reserve threshold (RESERVE-06)', () => {
+    // Against the 60 s base, 200 ppm alone reads as up to 12 ms of queue: above FLOW.reserveNoiseMs,
+    // which switched the call reserve off on a clean link.
+    for (const ppm of [200, -200]) {
+      const estimator = new DelayEstimator();
+      let worst = 0;
+      for (let at = 0; at <= 300_000; at += 1_000) {
+        const drift = (ppm / 1e6) * at;
+        worst = Math.max(worst, estimator.add(echo({ at, forwardMs: 20, reverseMs: 20, offsetMs: 5_000 + drift, idle: true })).qdRaw);
+      }
+      expect(worst).toBeLessThan(FLOW.reserveNoiseMs / 3);
+    }
+  });
+
   it('a reverse-path queue that comes and goes neither hides nor fakes a forward queue (FLOW-04)', () => {
     const estimator = new DelayEstimator();
     const read = (at: number, forwardQueue: number, reverseQueue: number) =>

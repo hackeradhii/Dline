@@ -23,6 +23,21 @@ function percentile(values: readonly number[], p: number): number {
 }
 
 /**
+ * A cellular uplink's own delay: up to `peakMs` extra, a new value every `slotMs` (radio scheduling),
+ * caused by no queue of ours. Seeded, so every run sees the same jitter.
+ */
+function radioJitter(peakMs: number, slotMs = 20): (t: number) => number {
+  let seed = 7;
+  const next = (): number => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const slots = new Map<number, number>();
+  return (t) => {
+    const slot = Math.floor(t / slotMs);
+    if (!slots.has(slot)) slots.set(slot, next() * peakMs);
+    return slots.get(slot)!;
+  };
+}
+
+/**
  * The app's pacer and scheduler in 1 ms steps: under a budget, chunks of about 10 ms of it go to
  * the emptiest lane; with no budget every lane is kept full; while holding, nothing goes. Never
  * faster than the app can read and hash (`appBytesPerSecond`).
@@ -163,6 +178,68 @@ describe('Dline Flow on a simulated bottleneck', () => {
     const { filesBps, queue } = sim.run(60_000);
     expect(percentile(queue, 0.95)).toBeLessThanOrEqual(45);
     expect(filesBps).toBeGreaterThanOrEqual(0.85 * (9 - 2.5) * MBIT);
+  });
+
+  it('during a call on a jittery uplink: files get what the call leaves, not a fraction of the call (field, 2026-11-02)', () => {
+    // Phone on 5G during a call: ping 65-90 ms, no real queue, yet files held at 90 KB/s. Radio
+    // jitter read as a busy bottleneck while Flow's own budget held files back, so the capacity
+    // measured was only what Flow allowed, and the call's share was cut from that again and again.
+    const media = 1.7 * MBIT;
+    for (const net of [{ capacityBps: () => 9 * MBIT }, { capacityBps: () => 30 * MBIT }]) {
+      const sim = sending(simulate({ net: { ...net, mediaBps: () => media, forwardDelayMs: 30, lanes: 15, forwardJitterMs: radioJitter(20) } }), {
+        callActive: true,
+        videoOn: true,
+        mediaSendBps: media,
+      });
+      sim.run(10_000);
+      const { filesBps, queue } = sim.run(60_000);
+      const callShare = FLOW.mediaHeadroom * FLOW.videoReserveBps;
+      expect(filesBps).toBeGreaterThanOrEqual(0.75 * (net.capacityBps() - callShare));
+      expect(percentile(queue, 0.95)).toBeLessThanOrEqual(45);
+    }
+  });
+
+  it('during a call on a 5G uplink as jittery as measured in the field: files take most of the link, and on a clean link still leave the call its share', () => {
+    // Field, 2026-11-02: with nothing of ours queued, 39-61 % of probes saw 15 ms or more of queue.
+    // Flow read it as congestion, cut a gentle start to the floor before anything had arrived, and
+    // the call's share, cut from its own demand, held files at 32 KB/s on a link carrying 1-2 MB/s.
+    const media = 1.5 * MBIT;
+    const callShare = FLOW.mediaHeadroom * FLOW.videoReserveBps;
+    const call = { callActive: true, videoOn: true, mediaSendBps: media };
+    const run = (net: Partial<BottleneckOptions>, idleMs: number) => {
+      const sim = simulate({ net: { mediaBps: () => media, forwardDelayMs: 30, lanes: 16, ...net } });
+      sim.session.setInputs({ pathKey: 'path-1', ...call });
+      sim.run(idleMs);
+      sim.start();
+      sim.run(10_000);
+      return sim.run(60_000);
+    };
+
+    const radio = run({ capacityBps: () => 15 * MBIT, forwardJitterMs: radioJitter(60, 100) }, 20_000);
+    expect(radio.filesBps).toBeGreaterThanOrEqual(0.25 * (15 * MBIT - callShare));
+    expect(percentile(radio.queue, 0.95)).toBeLessThanOrEqual(45);
+
+    const clean = run({ capacityBps: () => 9 * MBIT }, 2_000);
+    expect(clean.filesBps).toBeLessThanOrEqual(9 * MBIT - callShare);
+    expect(percentile(clean.queue, 0.95)).toBeLessThanOrEqual(45);
+  });
+
+  it('during a call on a noisy radio path, a short stall is not taken for the capacity: files keep most of the link (PLAN-RESERVE AC3)', () => {
+    // Field, 2026-11-02: a ~0.5 s radio stall set the capacity, and the call's share capped files at
+    // 48 KB/s for the rest of the run while the queue was back at 2-10 ms. Here: 0.8 s at 2 Mbit/s,
+    // 15 s into the transfer (a deeper stall reads as a deep queue and never set the cap).
+    const media = 1.5 * MBIT;
+    let stallFrom = Infinity;
+    const capacityBps = (t: number) => (t >= stallFrom && t < stallFrom + 800 ? 2 * MBIT : 15 * MBIT);
+    const sim = simulate({ net: { capacityBps, mediaBps: () => media, forwardDelayMs: 30, lanes: 16, forwardJitterMs: radioJitter(60, 100) } });
+    sim.session.setInputs({ pathKey: 'path-1', callActive: true, videoOn: true, mediaSendBps: media });
+    sim.run(20_000);
+    stallFrom = sim.clock.now() + 15_000;
+    sim.start();
+    sim.run(18_000);
+    const { filesBps, queue } = sim.run(30_000);
+    expect(filesBps).toBeGreaterThanOrEqual(0.25 * (15 * MBIT - FLOW.mediaHeadroom * FLOW.videoReserveBps));
+    expect(percentile(queue, 0.95)).toBeLessThanOrEqual(45);
   });
 
   it('without a call: nearly the whole link, with a short queue', () => {
@@ -311,3 +388,4 @@ describe('Dline Flow on a simulated bottleneck', () => {
     });
   });
 });
+

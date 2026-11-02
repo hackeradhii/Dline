@@ -80,6 +80,9 @@ export class RoomState {
         files.setFlowInputs({ callActive: s === 'active' });
       }),
     );
+    // Files first (PLAN-FILES-FIRST): Flow's reserve follows the cap the sender actually has.
+    on(call.events.on('videoCap', (cap) => files.setFlowInputs({ videoCapBps: cap?.maxBitrateBps ?? null })));
+    on(files.events.on('sending', (sending) => void call.setSendingFiles(sending)));
     on(call.events.on('localStream', (s) => (this.localStream = s)));
     on(call.events.on('remoteStream', (s) => (this.remoteStream = s)));
     on(

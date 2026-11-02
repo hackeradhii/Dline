@@ -32,9 +32,9 @@ export class CallReserve {
     return this.#last && at - this.#last.at <= FLOW.capacityMaxAgeMs ? this.#last.value : null;
   }
 
-  /** Bytes/s the call keeps out of `capacity`. */
-  reserve(mediaBitsPerSecond: number, videoOn: boolean, capacity: number): number {
-    const ceiling = videoOn ? FLOW.videoReserveBps : FLOW.audioReserveBps;
+  /** Bytes/s the call keeps out of `capacity`; a video capped (Files first) keeps room for a multiple of its cap. */
+  reserve(mediaBitsPerSecond: number, videoOn: boolean, capacity: number, videoCapBps: number | null = null): number {
+    const ceiling = videoOn ? Math.min(FLOW.videoReserveBps, FLOW.cappedVideoReserve * (videoCapBps ?? Infinity)) : FLOW.audioReserveBps;
     return Math.min(FLOW.maxReserveShare * capacity, (FLOW.mediaHeadroom * Math.max(mediaBitsPerSecond, ceiling)) / 8);
   }
 

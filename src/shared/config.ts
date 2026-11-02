@@ -77,6 +77,8 @@ export const TRANSFER = {
    * that it is only a safety net (e.g. the receiver dropped a block it had no room for): copies of
    * merely slow blocks would compete with new ones.
    */
+  /** Outgoing files still count as being sent this long after the last one is acknowledged (Files first). */
+  sendingHoldMs: 3_000,
   resend: {
     endgame: { factor: 2, minMs: 250 },
     midway: { factor: 4, minMs: 4_000 },
@@ -236,12 +238,56 @@ export const FLOW = {
   capacityBusyMs: 200,
   capacityMaxAgeMs: 30_000,
   /**
+   * The queue must stand this long, in every probe, before the bottleneck counts as busy: radio jitter
+   * on a 5G uplink changes every few tens of ms, so some probe in the window crosses an empty path.
+   * Two probes in a row were not enough: jitter looked busy while files went at a fraction of the
+   * link, the capacity measured was what Flow allowed, and the call's share, cut from it again and
+   * again, held files at 90 KB/s on a link with no queue (field, 2026-11-02).
+   */
+  standingQueueMs: 200,
+  standingQueueBuckets: 4,
+  /**
+   * The path's own noise: the `noisePercentile` of the raw queueing delay that clean probes (none of
+   * our files queued) still see, over the last `noiseSamples` of them within `noiseWindowMs` (long:
+   * during a transfer only drains bring clean samples, a few a minute), once there
+   * are `noiseMinSamples`. Marking starts no lower than it (the target is at least `noiseTargetFactor`
+   * × it), up to a target of `noiseTargetMaxMs`. On a 5G uplink, with nothing of ours queued, 39-61 %
+   * of probes saw 15 ms or more (p90 25-46 ms): with the call's 30 ms target, marking from 15 ms, Flow
+   * read the radio as congestion and held files at 32 KB/s on a link carrying 1-2 MB/s (field, 2026-11-02).
+   */
+  noiseWindowMs: 5 * 60_000,
+  /** Each clean sample's noise is its one-way delay above the shortest in this window: short, so clock drift (±200 ppm ≈ 2 ms here) isn't read as noise. */
+  noiseBaseWindowMs: 10_000,
+  noiseBaseBuckets: 5,
+  noiseSamples: 64,
+  noiseMinSamples: 8,
+  noisePercentile: 0.9,
+  noiseTargetFactor: 2,
+  noiseTargetMaxMs: 100,
+  /** A busy bottleneck (call reserve) needs a standing queue of at least this × the noise as well: jitter doesn't stand that high. */
+  noiseBusyFactor: 2,
+  /**
+   * The capacity-based call reserve is off while the noise is at or above this: on a radio path a
+   * stall of half a second was taken for the capacity and capped files at 48 KB/s on a link carrying
+   * 1-2 MB/s (field, 2026-11-02), so there the call is protected by the queueing-delay target alone.
+   * Clean paths (the bench, wired links) show a noise near 0; the field 5G path showed a filtered
+   * p90 of 14-25 ms, its raw p90 higher still.
+   */
+  reserveNoiseMs: 10,
+  /**
    * The call keeps headroom × the larger of its measured rate and its ceiling, at most
    * `maxReserveShare` of the bottleneck. The ceiling gets the headroom too: a video that backed off
    * needs room to come back, and with files filling the rest the link ran 97 % full on the bench.
    */
   mediaHeadroom: 1.25,
   videoReserveBps: 2_500_000,
+  /**
+   * A video capped by Files first keeps room for twice its cap. With room for the cap alone, files
+   * filled the rest of a fast link, its small queue swings made the video's own congestion control
+   * back off again and again (441 → 160 kbit/s in one transfer), so it froze, fell to 135p and was
+   * still below 360p 6 s after the cap was lifted (bench ff4-diag-flow, cell-down).
+   */
+  cappedVideoReserve: 2,
   audioReserveBps: 64_000,
   maxReserveShare: 0.7,
   /**
@@ -290,6 +336,14 @@ export const LANES = {
 export const MEDIA = {
   video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
   audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  /**
+   * Files first (PLAN-FILES-FIRST): while this device sends files during a call, its camera is sent
+   * at most at 360p (the shorter side) and 500 kbit/s, so the uplink goes to files; Flow's call
+   * reserve follows the applied cap. A bitrate-only cap was tried: the encoder kept 540-720p at
+   * 250-410 kbit/s, blurrier and with more freezes. (A video floor was tried and removed too: the
+   * encoder recovered too slowly, and cutting files on the video's send rate starved them to 32 KB/s.)
+   */
+  filesFirst: { maxShortSide: 360, maxBitrateBps: 500_000 },
 } as const;
 
 export const STORAGE_KEYS = {

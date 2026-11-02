@@ -16,6 +16,9 @@ const record = (t: number): TraceRecord => ({
   call: true,
   media: 2_500_000,
   lanes: 4,
+  target: 30,
+  noise: 8,
+  reserve: 400_000,
 });
 
 describe('FlowTrace (PLAN.md §5.7)', () => {
@@ -33,6 +36,6 @@ describe('FlowTrace (PLAN.md §5.7)', () => {
   it('saves as versioned JSON of numbers and flags only', () => {
     const trace = new FlowTrace();
     trace.add(record(5));
-    expect(JSON.parse(JSON.stringify(trace))).toEqual({ version: 1, windowMs: FLOW.traceWindowMs, records: [record(5)], drains: [] });
+    expect(JSON.parse(JSON.stringify(trace))).toEqual({ version: 2, windowMs: FLOW.traceWindowMs, records: [record(5)], drains: [] });
   });
 });

@@ -12,9 +12,9 @@ const NEAR_RTT = 5;
 /** A queue that marks fully without a call (above the 60 ms target), short of a deep queue (4 × target). */
 const MARKED = 100;
 const DEEP = 4 * FLOW.targetIdleMs + 1;
-const VIDEO_CALL: FlowInputs = { callActive: true, videoOn: true, mediaSendBps: 0 };
+const VIDEO_CALL: FlowInputs = { callActive: true, videoOn: true, mediaSendBps: 0, videoCapBps: null };
 
-const reading = (qdAvg: number, sRtt = RTT): DelayReading => ({ qd: qdAvg, qdAvg, sRtt, baseRtt: sRtt, validated: false });
+const reading = (qdAvg: number, sRtt = RTT): DelayReading => ({ qd: qdAvg, qdRaw: qdAvg, qdAvg, sRtt, baseRtt: sRtt, validated: false, clean: false });
 
 /** A controller fed one echo every 40 ms. The pacer is using the budget unless `appLimited`. */
 class Harness {
@@ -45,6 +45,15 @@ class Harness {
   /** Files start, and the first sample after a full delivery window sees a queue: controlled at 0.9 × `delivery`. */
   enter(delivery: number): this {
     return this.start().run(Math.ceil(FLOW.deliveryWindowMs / STEP) * STEP, MARKED, delivery);
+  }
+
+  /** `count` clean samples (an empty path) whose raw queueing delay is `qdRaw`: the path's own noise. */
+  noise(qdRaw: number, count: number = FLOW.noiseMinSamples): this {
+    for (let i = 0; i < count; i++) {
+      this.now += STEP;
+      this.flow.update({ ...reading(0), qdRaw, clean: true }, { bytesPerSecond: 0, recentBytesPerSecond: 0, since: null }, this.now);
+    }
+    return this;
   }
 
   call(inputs: Partial<FlowInputs>): this {
@@ -122,6 +131,20 @@ describe('FlowController: rate (PLAN.md §5.3)', () => {
     expect(new Harness().enter(D).run(2_000, qdAvg, D).flow.limit).toBeCloseTo((1 - alpha / 2) * D, 0);
   });
 
+  it('cuts nothing on a delivery reading that is not full yet: a mark at the start holds the gentle rate (field, 2026-11-02)', () => {
+    // On a 5G uplink a jitter spike marked 300 ms into a transfer, before anything had arrived:
+    // "just under what arrives" was 0, so the rate fell to the floor and the congestion point to 0.
+    const h = new Harness().call(VIDEO_CALL).start(RTT);
+    h.run(300, 2 * FLOW.targetCallMs, 0);
+    expect(h.flow.limit).toBe(FLOW.callStartBytesPerSecond);
+
+    // Once a full reading is in, the first cut goes just under what actually arrives.
+    const quiet = new Harness().start(RTT).run(300, MARKED, 0);
+    expect(quiet.flow.limit).toBe(FLOW.startBytesPerSecond);
+    quiet.run(FLOW.deliveryWindowMs - 300 + STEP, MARKED, 800 * KIB);
+    expect(quiet.flow.limit).toBeGreaterThanOrEqual(0.5 * 800 * KIB);
+  });
+
   it('never goes below the floor', () => {
     const h = new Harness().enter(16 * KIB).run(2_000, MARKED, 16 * KIB);
     expect(h.flow.limit).toBe(FLOW.minBytesPerSecond);
@@ -189,6 +212,7 @@ describe('FlowController: rate (PLAN.md §5.3)', () => {
       rttMs: RTT,
       deliveryBytesPerSecond: 2 * MIB,
       targetMs: FLOW.targetIdleMs,
+      noiseMs: 0,
       reserveBytesPerSecond: null,
     });
     expect(h.flow.decision).toBe(decisions[1]);
@@ -306,9 +330,13 @@ describe('FlowController: call first (rule 5, FLOW-06)', () => {
   /** A video call with its camera on keeps headroom over its 720p ceiling while it sends less. */
   const share = (FLOW.mediaHeadroom * FLOW.videoReserveBps) / 8;
   const room = D - share;
+  /** Long enough to measure the bottleneck: a full delivery reading first (A′), then `capacityBusyMs` of busy samples. */
+  const MEASURED = FLOW.deliveryWindowMs + FLOW.capacityBusyMs + STEP;
+  /** A queue that shows the bottleneck busy without marking: exactly half the idle target. */
+  const BUSY = FLOW.targetIdleMs / 2;
 
   it('a call starting mid-transfer gets its share at the event, and files stay below the rest', () => {
-    const h = new Harness().enter(D); // The queue showed the bottleneck: C = D.
+    const h = new Harness().enter(D).run(MEASURED - FLOW.deliveryWindowMs, BUSY, D); // The queue showed the bottleneck: C = D.
     h.call(VIDEO_CALL);
     expect(h.flow.limit).toBeCloseTo(room, 6);
     h.run(STEP, 0, D);
@@ -317,7 +345,7 @@ describe('FlowController: call first (rule 5, FLOW-06)', () => {
   });
 
   it('a call starting while files go unlimited takes control at the bottleneck minus the call', () => {
-    const h = new Harness().start().run(FLOW.deliveryWindowMs - 100, MARKED, D); // Too soon to take control, but C is known.
+    const h = new Harness().start().run(MEASURED, BUSY, D); // Busy but not marking: still unlimited, and C is known.
     expect(h.flow.limit).toBeNull();
     h.call(VIDEO_CALL);
     expect(h.flow.state).toBe('controlled');
@@ -326,16 +354,66 @@ describe('FlowController: call first (rule 5, FLOW-06)', () => {
 
   it('measures the bottleneck over the time it stays busy, so what arrives in bursts does not overstate it', () => {
     // On the bench, the largest of short readings put the bottleneck a third too high, and files took the call's share.
-    const h = new Harness().start();
-    for (let k = 0; k < 10; k++) h.run(STEP, MARKED, (k % 2 ? 1.4 : 0.6) * D);
+    const h = new Harness().start().run(FLOW.deliveryWindowMs, BUSY, D);
+    for (let k = 0; k < 10; k++) h.run(STEP, BUSY, (k % 2 ? 1.4 : 0.6) * D);
     expect(h.call(VIDEO_CALL).flow.limit).toBeCloseTo(room, 6);
   });
 
   it('measures it only while the queue shows it busy, from half the target: below that, what arrives says nothing about it', () => {
-    const below = new Harness().start().run(FLOW.deliveryWindowMs - 100, FLOW.targetIdleMs / 2 - 1, D);
+    const below = new Harness().start().run(MEASURED, BUSY - 1, D);
     expect(below.call(VIDEO_CALL).flow.limit).toBeNull();
-    const busy = new Harness().start().run(FLOW.deliveryWindowMs - 100, FLOW.targetIdleMs / 2, D);
+    const busy = new Harness().start().run(MEASURED, BUSY, D);
     expect(busy.call(VIDEO_CALL).flow.limit).toBeCloseTo(room, 6);
+  });
+
+  it('takes no capacity sample before a full delivery reading (PLAN-RESERVE AC1)', () => {
+    // Field, 2026-11-02: 0.28 s into a transfer, with nothing arrived yet, the call's media alone passed for the capacity.
+    const h = new Harness().call(VIDEO_CALL).start(RTT).run(FLOW.deliveryWindowMs - STEP, MARKED, 0);
+    expect(h.flow.decision?.reserveBytesPerSecond).toBeNull();
+    expect(h.flow.limit).toBe(FLOW.callStartBytesPerSecond);
+    h.run(MEASURED - FLOW.deliveryWindowMs + STEP, BUSY, D);
+    expect(h.flow.decision?.reserveBytesPerSecond).toBe(share);
+  });
+
+  it('on a noisy path the capacity-based reserve is off: no cap and nothing reported; on a quiet one, the same cap as before (AC2)', () => {
+    const noisy = new Harness().noise(FLOW.reserveNoiseMs).start().run(MEASURED, BUSY, D).call(VIDEO_CALL);
+    expect(noisy.flow.limit).toBeNull();
+    expect(noisy.run(STEP, 0, D).flow.decision).toMatchObject({ noiseMs: FLOW.reserveNoiseMs, reserveBytesPerSecond: null });
+
+    const quiet = new Harness().noise(FLOW.reserveNoiseMs - 1).start().run(MEASURED, BUSY, D).call(VIDEO_CALL);
+    expect(quiet.flow.limit).toBeCloseTo(room, 6);
+  });
+
+  it('forgets the capacity when the reserve switches off, and measures it afresh once the noise falls (AC2b, RESERVE-01)', () => {
+    const h = new Harness().call(VIDEO_CALL).start().run(MEASURED, FLOW.targetCallMs / 2, D);
+    expect(h.flow.decision?.reserveBytesPerSecond).toBe(share);
+    h.noise(2 * FLOW.reserveNoiseMs); // Noisy: the reserve switches off.
+    h.run(MEASURED, 100, D / 4); // A stall while it is off: busy, carrying a quarter. It must not become the capacity.
+    h.noise(0, FLOW.noiseSamples); // The noise falls back.
+    expect(h.flow.decision).toMatchObject({ noiseMs: 0, reserveBytesPerSecond: null });
+    h.run(MEASURED, FLOW.targetCallMs / 2, D); // Fresh busy samples measure it again.
+    expect(h.flow.decision?.reserveBytesPerSecond).toBe(share);
+  });
+
+  it('keeps enforcing a known reserve during a new delivery window: a camera turned on as files resume is capped at once (RESERVE-07)', () => {
+    const AUDIO_CALL: FlowInputs = { callActive: true, videoOn: false, mediaSendBps: 0, videoCapBps: null };
+    const justBusy = FLOW.targetCallMs / 2 + 1; // Busy, and marking only lightly: the rate stays well above the video room.
+    const h = new Harness().call(AUDIO_CALL).start().run(MEASURED, justBusy, D); // Controlled; C = D, the audio reserve.
+    expect(h.flow.state).toBe('controlled');
+    expect(h.flow.limit).toBeGreaterThan(room);
+    h.flow.sending(false, h.now, NEAR_RTT);
+    h.start().call({ videoOn: true }); // Files resume and the camera comes on: not a call start, so no cap at the event.
+    h.run(2 * STEP, MARKED, D); // Inside the new delivery window, marking.
+    expect(h.flow.limit).toBeLessThanOrEqual(room);
+  });
+
+  it('with the Files first cap applied, the call keeps room for twice the capped video, so files get the rest (FF3)', () => {
+    const capped = new Harness().call({ ...VIDEO_CALL, videoCapBps: 500_000 }).start().run(MEASURED, FLOW.targetCallMs / 2, D);
+    const cappedShare = (FLOW.mediaHeadroom * 2 * 500_000) / 8; // Room to recover: with the cap alone, the video ratcheted down to 160 kbit/s.
+    expect(capped.flow.decision?.reserveBytesPerSecond).toBeCloseTo(cappedShare, 6);
+    expect(cappedShare).toBeLessThan(share);
+    const uncapped = new Harness().call(VIDEO_CALL).start().run(MEASURED, FLOW.targetCallMs / 2, D);
+    expect(uncapped.flow.decision?.reserveBytesPerSecond).toBe(share);
   });
 
   it('learns nothing about the bottleneck while no files go out', () => {

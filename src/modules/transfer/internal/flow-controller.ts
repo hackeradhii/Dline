@@ -2,8 +2,10 @@ import { FLOW, LANES } from '../../../shared/config';
 import { Emitter } from '../../../shared/emitter';
 import { clamp } from '../../../shared/math';
 import { Windowed } from '../../../shared/windowed';
-import { CallReserve } from './call-reserve';
+import { CallGuard, type CallInputs } from './call-guard';
+import { DrainSchedule, type Drain } from './drain-schedule';
 import type { DelayReading } from './delay-estimator';
+import { QueueTarget } from './queue-target';
 import type { RatePolicy } from './rate-policy';
 
 /**
@@ -14,14 +16,8 @@ import type { RatePolicy } from './rate-policy';
  */
 export type FlowState = 'unlimited' | 'controlled' | 'draining';
 
-/** Plain inputs from the composition root; the controller never reads stats itself (I in SOLID). */
-export interface FlowInputs {
-  callActive: boolean;
-  /** Our own camera is sending. */
-  videoOn: boolean;
-  /** Audio + video send rate, bits/s. */
-  mediaSendBps: number;
-}
+/** Plain inputs from the composition root (see `CallInputs`). */
+export type FlowInputs = CallInputs;
 
 /** What the receiver reports arriving. */
 export interface Delivery {
@@ -34,7 +30,7 @@ export interface Delivery {
 }
 
 /** A drain's hold on new writes and its deadline, past which `limit` releases it by itself (FLOW-13). */
-export interface Hold {
+interface Hold {
   until: number;
   /** The positive budget once the hold is released without validating the base. */
   release: number;
@@ -51,25 +47,19 @@ export interface FlowDecision {
   rttMs: number;
   deliveryBytesPerSecond: number;
   targetMs: number;
-  /** What the call keeps, while a call is on and the bottleneck is known. */
+  /** The path's own queueing delay, from clean samples (0 while unknown). */
+  noiseMs: number;
+  /** What the call keeps, while a call is on, the bottleneck is known and the path is quiet enough to measure it. */
   reserveBytesPerSecond: number | null;
 }
 
-export interface FlowControllerOptions {
+interface FlowControllerOptions {
   /** Monotonic: what a hold's deadline is checked against. */
   now(): number;
   /** When the pacer last had to wait: the budget is actually in use. */
   pacerWaitAt(): number;
   /** Validation drains are allowed (Flow in charge); never in shadow mode. */
   drains: boolean;
-}
-
-/** A drain in progress: where it came from, and its deadline. */
-interface Drain {
-  from: 'unlimited' | 'controlled';
-  rate: number;
-  delivery: number;
-  until: number;
 }
 
 /** No budget below the floor. */
@@ -86,7 +76,8 @@ const entryRate = (delivery: number): number => floored(FLOW.entryFactor * deliv
  */
 export class FlowController implements RatePolicy {
   readonly events = new Emitter<{ decision: FlowDecision }>();
-  readonly #reserve = new CallReserve();
+  readonly #guard = new CallGuard();
+  readonly #target = new QueueTarget();
   /** The most that arrived lately (`FLOW.startDeliveryWindowMs`): what bounds a gentle start. */
   readonly #peakDelivery = new Windowed('max', FLOW.startDeliveryWindowMs, FLOW.startDeliveryBuckets);
   #state: FlowState = 'unlimited';
@@ -95,24 +86,21 @@ export class FlowController implements RatePolicy {
   /** R_last: the rate at the last congestion point; null when unknown. */
   #rateLast: number | null = null;
   #marked = false;
-  #targetScale = 1;
-  #externalSince: number | null = null;
   #lastAt: number | null = null;
   #delivery = 0;
   #sendingSince: number | null = null;
-  #inputs: FlowInputs = { callActive: false, videoOn: false, mediaSendBps: 0 };
-  #drain: Drain | null = null;
-  #retryAt = -Infinity;
-  /** When a reset while sending made the base suspect (null: it isn't): it is validated before it is trusted again. */
-  #suspectSince: number | null = null;
+  #inputs: FlowInputs = { callActive: false, videoOn: false, mediaSendBps: 0, videoCapBps: null };
+  readonly #drains: DrainSchedule;
   /** Files started before any round trip was known: rule 1 waits for the first. */
   #startPending = false;
   #decision: FlowDecision | null = null;
 
-  constructor(private readonly options: FlowControllerOptions) {}
+  constructor(private readonly options: FlowControllerOptions) {
+    this.#drains = new DrainSchedule(options.drains);
+  }
 
   get limit(): number | null {
-    const drain = this.#drain;
+    const drain = this.#drains.active;
     // A hold never outlives its deadline, whatever is late to end the drain (FLOW-13).
     if (drain) return this.options.now() >= drain.until ? this.#release(drain) : 0;
     return this.#state === 'unlimited' ? null : this.#rate;
@@ -123,7 +111,8 @@ export class FlowController implements RatePolicy {
   }
 
   get hold(): Hold | null {
-    return this.#drain && { until: this.#drain.until, release: this.#release(this.#drain) };
+    const drain = this.#drains.active;
+    return drain && { until: drain.until, release: this.#release(drain) };
   }
 
   /** The latest decision, or null before the first sample. */
@@ -137,7 +126,7 @@ export class FlowController implements RatePolicy {
     if (!starting) return;
     // A call starts: the target drops to the call's at once (the next sample uses it), and with a
     // known bottleneck the call gets its share straight away, so its video starts on an empty queue.
-    this.#targetScale = 1;
+    this.#target.callStarted();
     const room = this.#room(at);
     if (room === null || this.#state === 'draining') return;
     if (this.#state === 'unlimited') this.#control(room, null);
@@ -167,25 +156,24 @@ export class FlowController implements RatePolicy {
     this.#delivery = delivery.bytesPerSecond;
     this.#peakDelivery.add(delivery.recentBytesPerSecond, at);
     const rtt = Math.max(reading.sRtt, FLOW.virtualRttMs);
-    const target = this.#target();
+    if (reading.clean) this.#target.clean(reading.qdRaw, at);
+    const noise = this.#target.noise(at);
+    const target = this.#target.value(this.#inputs.callActive, noise);
     const alpha = clamp((reading.qdAvg - target / 2) / (target / 2), 0, 1);
-    // Two probes in a row found a queue while files were going out (the reading is the smaller of
-    // the two): the bottleneck stayed busy between them, so what arrived meanwhile is what it
-    // carries, its capacity. With no files going out, what arrived says nothing about it: on
-    // localhost, a page busy starting a call delayed idle probes by 35 ms, and that "busy" link
-    // capped the next transfer at 0.45 MiB/s for 30 s. Half the target, where marking starts, is
-    // clear of the media's own frames, which leave in bursts and queue for a few ms: sampled at a
-    // quarter of it, what the link happened to carry became the cap, and on the bench that
-    // ratcheted files down to the 70 % reserve limit.
-    const busy = this.#sendingSince !== null && reading.qd >= target / 2;
-    if (busy && delivery.since) this.#reserve.busy(delivery.since.bytes, delivery.since.ms, this.#inputs.mediaSendBps, at);
+    const { mediaSendBps } = this.#inputs;
+    this.#guard.observe({ qd: reading.qd, since: delivery.since, deliveryKnown: this.#deliveryKnown(at), target, noise, mediaSendBps }, at);
 
     if (this.#state !== 'draining' && this.#sendingSince !== null) {
       if (this.#state === 'unlimited') this.#maybeEnter(alpha, at);
-      else this.#adjust(alpha, reading.qdAvg, target, step, rtt, at);
-      this.#external(reading.qdAvg, target, step, at);
+      // Cuts go just under what arrives, so they wait for a full delivery reading, as rule 1 does: a
+      // mark 300 ms into a gentle start, with nothing arrived yet, cut to the floor (field, 2026-11-02).
+      else if (alpha === 0 || this.#deliveryKnown(at)) this.#adjust(alpha, reading.qdAvg, target, step, rtt, at);
+      // A known call reserve doesn't depend on that reading: it holds from the first sample (RESERVE-07).
+      else this.#capForCall(at);
+      const starved = this.#state === 'controlled' && this.#rateLast !== null && this.#rate <= FLOW.externalStarvedShare * this.#rateLast;
+      this.#target.external(reading.qdAvg, target, starved, this.#inputs.callActive, step, at);
     }
-    this.#decide(at, reading, target);
+    this.#decide(at, reading, target, noise);
   }
 
   /** Rule 8: no echo for a while during a controlled transfer halves the rate, once per gap. */
@@ -198,26 +186,22 @@ export class FlowController implements RatePolicy {
   reset(at: number): void {
     this.#lastAt = null;
     this.#marked = false;
-    this.#targetScale = 1;
-    this.#externalSince = null;
-    this.#reserve.reset();
+    this.#target.reset();
+    this.#guard.reset();
     this.#peakDelivery.reset();
     // While sending, the new base may be measured over a standing queue; idle probes are clean anyway.
-    this.#suspectSince = this.#sendingSince !== null ? at : null;
+    this.#drains.suspect(this.#sendingSince !== null ? at : null);
   }
 
   /** Rule 6: time to prove the base was measured on an empty path. */
   wantsDrain(at: number, lastCleanAt: number): boolean {
-    if (!this.options.drains || this.#state === 'draining' || this.#sendingSince === null || at < this.#retryAt) return false;
-    // After a reset while sending, until a clean sample comes: a failed drain is tried again as soon as `drainRetryMs` allows.
-    const suspect = this.#suspectSince !== null && lastCleanAt < this.#suspectSince;
-    return suspect || at - Math.max(lastCleanAt, this.#sendingSince) >= FLOW.baseValidateMs;
+    return this.#drains.due(at, lastCleanAt, this.#sendingSince);
   }
 
   /** Rule 6, step 1: hold new writes, for at most `drainMaxMs` in all. */
   startDrain(at: number): void {
     if (this.#state === 'draining') return;
-    this.#drain = { from: this.#state, rate: this.#rate, delivery: this.#delivery, until: at + FLOW.drainMaxMs };
+    this.#drains.begin(this.#state, this.#rate, this.#delivery, at);
     this.#state = 'draining';
   }
 
@@ -227,17 +211,14 @@ export class FlowController implements RatePolicy {
    * unlimited), with another attempt after `drainRetryMs`.
    */
   endDrain(validated: boolean, at: number): void {
-    const drain = this.#drain;
+    const drain = this.#drains.finish(validated, at);
     if (!drain) return;
-    this.#drain = null;
     if (validated) {
       this.#state = drain.from;
       this.#rate = drain.rate;
-      this.#suspectSince = null;
       return;
     }
     this.#control(this.#release(drain), drain.from === 'controlled' ? this.#rateLast : drain.delivery);
-    this.#retryAt = at + FLOW.drainRetryMs;
   }
 
   #release(drain: Drain): number {
@@ -254,7 +235,7 @@ export class FlowController implements RatePolicy {
   #start(baseRttMs: number | null, at: number): void {
     this.#startPending = baseRttMs === null;
     const far = baseRttMs !== null && baseRttMs > LANES.nearRttMs;
-    if (this.#state === 'unlimited' && far && this.#reserve.capacity(at) === null) this.#control(this.#startRate(), null);
+    if (this.#state === 'unlimited' && far && this.#guard.measured(at) === null) this.#control(this.#startRate(), null);
   }
 
   #control(rate: number, rateLast: number | null): void {
@@ -332,49 +313,19 @@ export class FlowController implements RatePolicy {
     if (room !== null && this.#state === 'controlled') this.#rate = Math.min(this.#rate, room);
   }
 
-  /** What files may use during a call with a known bottleneck, or null. */
+  /** Files have been going out for a full delivery reading: what arrives is a real measurement. */
+  #deliveryKnown(at: number): boolean {
+    return this.#sendingSince !== null && at - this.#sendingSince >= FLOW.deliveryWindowMs;
+  }
+
+  /** What files may use during a call with a known bottleneck (never below the floor), or null. */
   #room(at: number): number | null {
-    if (!this.#inputs.callActive) return null;
-    const capacity = this.#reserve.capacity(at);
-    if (capacity === null) return null;
-    return floored(capacity - this.#callShare(capacity));
+    const room = this.#guard.room(this.#inputs, this.#target.noise(at), at);
+    return room === null ? null : floored(room);
   }
 
-  /** What the call keeps of a bottleneck of `capacity`. */
-  #callShare(capacity: number): number {
-    return this.#reserve.reserve(this.#inputs.mediaSendBps, this.#inputs.videoOn, capacity);
-  }
-
-  /**
-   * Rule 7 (no call only, SCReAM adjust_qdelay_target): a queue above target that persists while
-   * files are down to a quarter of their last rate isn't ours, so the target grows, up to 400 ms;
-   * it shrinks back once the queue is under half of it.
-   */
-  #external(qdAvg: number, target: number, step: number, at: number): void {
-    if (this.#inputs.callActive) {
-      this.#targetScale = 1;
-      this.#externalSince = null;
-      return;
-    }
-    const starved = this.#state === 'controlled' && this.#rateLast !== null && this.#rate <= FLOW.externalStarvedShare * this.#rateLast;
-    if (qdAvg > target && starved) {
-      this.#externalSince ??= at;
-      if (at - this.#externalSince < FLOW.externalQueueMs) return;
-      this.#targetScale = Math.min(FLOW.targetMaxMs / FLOW.targetIdleMs, this.#targetScale * FLOW.externalStep);
-      this.#externalSince = at;
-    } else {
-      this.#externalSince = null;
-      if (qdAvg < target / 2) this.#targetScale = Math.max(1, this.#targetScale * FLOW.externalDecayPerSecond ** (step / 1000));
-    }
-  }
-
-  /** The queueing-delay target, ms: call first, or the idle target, grown if another app owns the queue. */
-  #target(): number {
-    return this.#inputs.callActive ? FLOW.targetCallMs : FLOW.targetIdleMs * this.#targetScale;
-  }
-
-  #decide(at: number, reading: DelayReading, target: number): void {
-    const capacity = this.#inputs.callActive ? this.#reserve.capacity(at) : null;
+  #decide(at: number, reading: DelayReading, target: number, noise: number): void {
+    const capacity = this.#guard.capacity(this.#inputs, noise, at);
     this.#decision = {
       at,
       state: this.#state,
@@ -384,7 +335,8 @@ export class FlowController implements RatePolicy {
       rttMs: reading.sRtt,
       deliveryBytesPerSecond: this.#delivery,
       targetMs: target,
-      reserveBytesPerSecond: capacity === null ? null : this.#callShare(capacity),
+      noiseMs: noise,
+      reserveBytesPerSecond: capacity === null ? null : this.#guard.share(this.#inputs, capacity),
     };
     this.events.emit('decision', this.#decision);
   }
