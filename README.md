@@ -12,13 +12,12 @@ No app to install. No account. No media server.
 <br>
 
 
-
 ![Svelte 5](https://img.shields.io/badge/Svelte_5-FF3E00?style=flat-square&logo=svelte&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=flat-square&logo=cloudflareworkers&logoColor=white)
 ![PWA](https://img.shields.io/badge/Installable_PWA-5A0FC8?style=flat-square&logo=pwa&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-244_passing-00855A?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-302_passing-00855A?style=flat-square)
 ![Duplicated code](https://img.shields.io/badge/duplicated_code-0_blocks-00855A?style=flat-square)
 
 [The challenge](#the-challenge) · [Features](#features) · [How it works](#how-it-works) · [Speed](#speed) · [Architecture](#architecture) · [Getting started](#getting-started)
@@ -32,7 +31,7 @@ No app to install. No account. No media server.
     <td align="center" width="25%"><h2>~1 s</h2><sub>to pair two devices</sub></td>
     <td align="center" width="25%"><h2>0 bytes</h2><sub>of media through any server</sub></td>
     <td align="center" width="25%"><h2>up to 15×</h2><sub>faster files than one connection</sub></td>
-    <td align="center" width="25%"><h2>3 s → 15 ms</h2><sub>upload queue during a call (lab)</sub></td>
+    <td align="center" width="25%"><h2>3 s → ~60 ms</h2><sub>ping while a 5G phone sends files during a call</sub></td>
   </tr>
 </table>
 
@@ -71,8 +70,8 @@ Dline started as a challenge with a strict set of rules. Each one is met like th
       Files are cut into 128 KB blocks, each checked with SHA-256, and spread over up to 16 parallel direct connections. Blocks arrive in any order and are written by position. Large files stream to disk (OPFS) instead of memory.
     </td>
     <td width="50%" valign="top">
-      <h3>🌊 Dline Flow pacing <sup><code>lab</code></sup></h3>
-      A delay-based controller that stops file transfers from flooding a phone's upload buffer, so the video call stays smooth while files are moving. Older peers fall back to the previous pacing automatically.
+      <h3>🌊 Dline Flow pacing</h3>
+      A delay-based controller that stops file transfers from flooding a phone's upload buffer, so the video call stays smooth while files are moving. While you send files during a call, <b>Files first</b> sends your camera at 360p so the upload goes to the files, then restores it 3 s after the last one. Older peers fall back to the previous pacing automatically.
     </td>
   </tr>
   <tr>
@@ -159,7 +158,9 @@ flowchart LR
 
 - **See the queue within a round trip.** The receiver echoes every probe with its own timestamp and the bytes it has received.
 - **Hold the queue near a small target:** 30 ms during a call, 60 ms otherwise. The rate is cut in proportion to the queue and regrows carefully near the last congestion point.
-- **The call comes first.** During a call, files stay below the bottleneck minus the call's share.
+- **The call comes first.** During a call, files stay below the bottleneck minus the call's share. That share is measured only on quiet paths: on a jittery radio link, where a capacity reading would be wrong, the call is protected by the delay target alone.
+- **Radio noise is not congestion.** Flow learns how much the delay jitters on an idle path (the 90th percentile of clean readings) and keeps its target at least twice that, up to 100 ms, so 5G jitter doesn't throttle files to a crawl.
+- **Files first.** While this device sends files during a call, its camera goes out at 360p and at most 500 kbit/s, and the call's share shrinks to room for twice that cap. The cap waits 3 s after the last file before lifting, so files sent one after another don't make the video change size and freeze, and the camera is back at full size about a second later.
 - **No bursts.** Blocks leave as paced 1–16 KiB pieces instead of 128 KB bursts, and short validation pauses (with a marker on every lane) prove the base delay was measured on an empty path.
 
 <p align="center">
@@ -179,13 +180,28 @@ Emulated 9 Mbit/s phone uplink with a 3 s buffer; medians of 3 runs, previous pa
 | Phone → laptop, during a call | 5.44 Mbit/s / 3.0 s, call broken (0 of 3) | 5.20–5.56 Mbit/s / **15 ms** | **720p30, no freezes** |
 | Laptop → phone, during a call | 15.6 Mbit/s / 199 ms, call broken (0 of 3) | **21.3 Mbit/s / 23 ms** | 720p30, no freezes |
 | Fluctuating uplink (5–12 Mbit/s), during a call | 4.07 Mbit/s / 3.0 s | 2.33 Mbit/s / **15 ms** | protected first |
+| Phone → laptop, during a call, **with Files first** | | **7.03–7.19 Mbit/s / ~7 ms** (4 runs) | sender's camera 360p30 while sending, back to 720p 3 s after the last file |
+| Laptop → phone, during a call, **with Files first** | | **21.6–23.3 Mbit/s / ~15 ms** (4 runs) | same |
+
+With Files first, a single short freeze (about 0.3 s) still shows up in some fast-link runs; it is being looked into.
 
 On paths that don't queue (same network, far, long clean path) Flow matches or beats the old pacing: 100 %, 113 % and 109 %. One case is still open: a mobile path without a call starts slower (86 % of the old pacing), because Flow's paced start feeds the 16 lanes a few at a time.
 
 </details>
 
-> [!IMPORTANT]
-> **Flow is built and validated in the lab; field testing is in progress.** The build defaults to *shadow* mode, where Flow measures and the previous pacing applies. Add `?pacing=flow` to turn Flow on, `?pacing=legacy` to turn it off, or `?debug=1` to show the mode and download a pacing trace. Share links carry the switches, so both devices always match.
+### In the field
+
+A laptop on Airtel Wi-Fi and a phone on Jio 5G, direct over the internet, with a video call running while the phone sends a large video (67 MB before, 74.7 MB now):
+
+| Version | File speed | Ping | Phone's video |
+| :-- | --: | :-- | :-- |
+| Previous pacing | 0.26–0.44 MiB/s | **2.9–3.5 s** | call lagging by seconds |
+| **Flow with Files first** | **848 KB/s** (1.2 MB/s at the end) | **56–83 ms** | 270×480 at 30 fps while sending, full size 3 s after |
+
+The other way, laptop → phone, the same file took 40 s (1.88 MB/s). Every file was verified with SHA-256.
+
+> [!NOTE]
+> **Flow is on by default.** Add `?pacing=legacy` for the previous pacing, `?pacing=shadow` to let Flow only measure, or `?debug=1` to show the mode and download a pacing trace. Share links carry the switches, so both devices always match.
 
 ### On one laptop
 
@@ -300,8 +316,8 @@ Each run appends to `test-results/bench-results.jsonl` and prints medians at the
 Needs a Cloudflare account.
 
 ```bash
-npm run deploy           # production Worker
-npm run deploy:staging   # separate test Worker with Flow on by default (its rooms never mix with production's)
+npm run deploy           # production Worker (dline-v4)
+npm run deploy:staging   # separate test Worker (dline); its rooms never mix with production's
 ```
 
 </details>
@@ -310,9 +326,9 @@ npm run deploy:staging   # separate test Worker with Flow on by default (its roo
 
 | Layer | What it covers |
 | :-- | :-- |
-| **Unit and Worker** <br><sub>Vitest · 244 tests</sub> | Negotiation, lanes, framing, scheduling, resend, every Flow component, a simulated bottleneck, mixed old and new peers, the rendezvous Durable Object in workerd |
+| **Unit and Worker** <br><sub>Vitest · 302 tests</sub> | Negotiation, lanes, framing, scheduling, resend, every Flow component, a simulated bottleneck with radio jitter and stalls, the Files first video cap, mixed old and new peers, the rendezvous Durable Object in workerd |
 | **End to end** <br><sub>Playwright</sub> | Pairing by code and by links, a full video call, files both ways during a call verified by SHA-256, any file type, leave detection, localhost throughput |
-| **Network lab** <br><sub>`tests/bench`</sub> | Real browsers through emulated links: throughput, queueing delay and call quality (bitrate, frame rate, freezes) |
+| **Network lab** <br><sub>`tests/bench`</sub> | Real browsers through emulated links: throughput, queueing delay and call quality (bitrate, frame rate, freezes, second by second, and how fast the video recovers after a transfer) |
 
 ## Privacy and security
 
@@ -336,7 +352,7 @@ npm run deploy:staging   # separate test Worker with Flow on by default (its roo
 | # | Device A network | Device B network | Expected path | Result |
 | :-: | :-- | :-- | :-- | :-- |
 | 1 | Home Wi-Fi | Same Wi-Fi | Direct, same network | |
-| 2 | Home Wi-Fi | Jio 5G | Direct, likely IPv6 | |
+| 2 | Home Wi-Fi | Jio 5G | Direct, likely IPv6 | ✅ Direct (IPv6, later IPv4). During a call, phone → laptop 848 KB/s at 56–83 ms ping; laptop → phone 1.88 MB/s |
 | 3 | Jio 5G | Airtel 4G/5G | Direct, likely IPv6 | |
 | 4 | Airtel | Vi | Unknown | |
 | 5 | Mobile hotspot | IPv4-only broadband | May fail without TURN | |

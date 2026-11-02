@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   // One deployable: serves the static app AND hosts the rendezvous Durable Object.
-  "name": "dline",
+  "name": "dline-v4",
   "main": "./src/server/worker.ts",
   "compatibility_date": "2026-10-29",
   "assets": {
@@ -19,13 +19,13 @@
     "traces": { "enabled": true }
   },
   "upload_source_maps": true,
-  // Field tests run on a separate Worker (PLAN.md §6.2): `npm run deploy:staging` builds with
-  // `--mode staging` (.env.staging selects this environment) and deploys dline-v4. Durable
-  // Object bindings aren't inherited by environments, so they are repeated; the staging Worker has
-  // its own namespace, so its rooms never mix with production's.
+  // Production is dline-v4 (`npm run deploy`). Tests run on the separate `dline` Worker:
+  // `npm run deploy:staging` builds with `--mode staging` (.env.staging selects this environment).
+  // Durable Object bindings aren't inherited by environments, so they are repeated; the test
+  // Worker has its own namespace, so its rooms never mix with production's.
   "env": {
     "staging": {
-      "name": "dline-v4",
+      "name": "dline",
       "durable_objects": {
         "bindings": [{ "name": "ROOMS", "class_name": "RendezvousRoom" }]
       },

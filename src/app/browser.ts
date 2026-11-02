@@ -7,7 +7,7 @@ import type { Visibility } from '../shared/timer';
 /** Developer switches in the page URL (PLAN.md §5.6). Share links carry them, so both devices match. */
 const SWITCH_KEYS = ['pacing', 'debug'] as const;
 
-export interface Switches {
+interface Switches {
   /** The file pacing to run: `?pacing=legacy|shadow|flow`, else this build's default. */
   pacing: PacingMode;
   /** `?debug=1`: the pacing mode and "Save trace" in the connection details. */
@@ -16,10 +16,10 @@ export interface Switches {
 
 const asPacing = (value: unknown): PacingMode | undefined => PACING_MODES.find((mode) => mode === value);
 
-/** Read once at startup; unknown values are ignored. The staging build defaults to flow (VITE_PACING). */
+/** Read once at startup; unknown values are ignored. Every build defaults to Flow unless VITE_PACING names another mode. */
 export const switches: Switches = (() => {
   const params = new URLSearchParams(location.search);
-  return { pacing: asPacing(params.get('pacing')) ?? asPacing(import.meta.env.VITE_PACING) ?? 'shadow', debug: params.get('debug') === '1' };
+  return { pacing: asPacing(params.get('pacing')) ?? asPacing(import.meta.env.VITE_PACING) ?? 'flow', debug: params.get('debug') === '1' };
 })();
 
 export const mediaDevices: MediaDevicesPort = {
