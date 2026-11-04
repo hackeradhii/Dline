@@ -80,6 +80,13 @@ export const TRANSFER_ERROR_COPY: Record<TransferError, string> = {
   unsaved: 'Could not save the file.',
 };
 
+/** The performance-stats switch in Settings: what is sent, and what never is. */
+export const SHARE_METRICS_COPY = {
+  label: 'Share performance stats',
+  detail:
+    "Sends numbers only to the Dline server's log: file sizes, speeds, timings, the connection type and your browser. Never file names, file contents, messages or your camera. Applies to the next connection.",
+} as const;
+
 export const IN_APP_BROWSER_COPY = 'This app browser may block the camera. Tap ⋯ and choose "Open in browser" (Chrome or Safari).';
 
 /** "File pacing" in the connection details: the upload budget files get right now. */

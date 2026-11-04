@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectConnected, expectVideoPlaying, pairWithCode, twoPeers } from './peers';
 
 test.describe('two devices', () => {
@@ -119,6 +119,43 @@ test.describe('two devices', () => {
     const hash = createHash('sha256');
     for await (const chunk of await (await download).createReadStream()) hash.update(chunk as Buffer);
     expect(hash.digest('hex')).toBe(createHash('sha256').update(files[1]!.buffer).digest('hex'));
+    await close();
+  });
+
+  test('session stats show live totals, and performance reports reach the log only when allowed', async ({ browser }) => {
+    const { a, b, close } = await twoPeers(browser);
+    const reports = (page: Page) => {
+      const sent: Array<{ t: string; [key: string]: unknown }> = [];
+      page.on('requestfinished', async (request) => {
+        if (!request.url().endsWith('/api/metrics')) return;
+        expect((await request.response())?.status()).toBe(204);
+        sent.push(JSON.parse(request.postData() ?? '{}'));
+      });
+      return sent;
+    };
+    const fromA = reports(a);
+    const fromB = reports(b);
+    // B turns reports off first; the choice is kept on that device.
+    await b.goto('/');
+    await b.getByRole('button', { name: 'Settings' }).click();
+    await b.getByLabel('Share performance stats').uncheck();
+    await b.keyboard.press('Escape');
+
+    await pairWithCode(a, b);
+    await a.locator('input[type=file]').setInputFiles({ name: 'clip.mp4', mimeType: 'video/mp4', buffer: randomBytes(1024 * 1024) });
+    await expect(b.getByText(/verified with SHA-256/)).toHaveCount(1, { timeout: 60_000 });
+
+    const stats = a.getByRole('region', { name: 'Session stats' });
+    await expect(stats.getByText('1 file sent')).toBeVisible();
+    await expect(stats.getByText('1.00 MB')).toBeVisible();
+    await expect(b.getByRole('region', { name: 'Session stats' }).getByText('1 file received')).toBeVisible();
+
+    await expect.poll(() => fromA.map((r) => r.t)).toEqual(expect.arrayContaining(['connect', 'transfer']));
+    expect(fromA.find((r) => r.t === 'transfer')).toMatchObject({ direction: 'out', status: 'done', bytes: 1024 * 1024, verified: true });
+    expect(JSON.stringify(fromA)).not.toContain('clip.mp4');
+    await a.getByRole('button', { name: 'Leave' }).click();
+    await expect.poll(() => fromA.find((r) => r.t === 'session')).toMatchObject({ end: 'left', up: { bytes: 1024 * 1024, files: 1 } });
+    expect(fromB).toEqual([]);
     await close();
   });
 

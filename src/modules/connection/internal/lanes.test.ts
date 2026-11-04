@@ -95,16 +95,27 @@ describe('LanePool', () => {
   it('judges distance by the lowest round trip seen, not one inflated by its own traffic', async () => {
     const { host, peers } = setup();
     await settle();
-    host.fit(3, true);
-    host.fit(LANES.nearRttMs * 10, true); // Queues full of file data.
+    host.fit(3, true, 'wifi');
+    host.fit(LANES.nearRttMs * 10, true, 'wifi'); // Queues full of file data.
     await settle();
     expect(peers.host.peers).toHaveLength(LANES.extra.near);
+  });
+
+  it('measures a new path afresh: a switch from Wi-Fi to mobile grows the pool for the longer trip', async () => {
+    const { host, peers } = setup();
+    await settle();
+    host.fit(3, true, 'wifi');
+    await settle();
+    expect(peers.host.peers).toHaveLength(LANES.extra.near);
+    host.fit(LANES.nearRttMs * 3, true, 'mobile');
+    await settle();
+    expect(peers.host.peers).toHaveLength(LANES.extra.far);
   });
 
   it('opens no extra lane while the main path is relayed or down', async () => {
     const { host, peers } = setup();
     await settle();
-    host.fit(3, false);
+    host.fit(3, false, 'wifi');
     await settle();
     expect(peers.host.peers).toHaveLength(0);
   });

@@ -1,9 +1,10 @@
 <script lang="ts">
   import { describeCandidate, type ConnectionSnapshot } from '../../modules/diagnostics';
   import type { PacingStatus } from '../../modules/transfer';
-  import { formatBitrate, formatBytes, formatMs, NO_VALUE } from '../../shared/format';
+  import { formatBitrate, formatBytes, formatMs, formatVideo, NO_VALUE } from '../../shared/format';
   import Button from '../../ui/Button.svelte';
   import Icon from '../../ui/Icon.svelte';
+  import { buildVersion } from '../browser';
   import { filePacingCopy, PACING_MODE_COPY } from '../copy';
 
   let {
@@ -42,8 +43,9 @@
     ['Sending', formatBitrate(snapshot?.sendBps ?? NaN)],
     ['Receiving', formatBitrate(snapshot?.receiveBps ?? NaN)],
     ['Packet loss', snapshot?.lossPercent == null ? NO_VALUE : `${snapshot.lossPercent.toFixed(1)}%`],
-    ['Their video', video?.width ? `${video.width}×${video.height}, ${Math.round(video.fps ?? 0)} fps, ${video.codec ?? '?'}` : 'Off'],
+    ['Their video', formatVideo(video)],
     ['Upload available', formatBitrate(snapshot?.availableOutgoingBps ?? NaN)],
+    ['App version', buildVersion],
     ...(debug && pacing ? ([['Pacing mode', `${PACING_MODE_COPY[pacing.mode]}${pacing.flowInCharge ? ', in charge' : ''}`]] as Array<[string, string]>) : []),
   ]);
   const p2p = $derived(snapshot ? snapshot.relayedBytes === 0 && !path?.relayed : null);

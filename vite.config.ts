@@ -4,6 +4,11 @@ import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/** When this build was made (local time), e.g. "2026-11-04 10:45": shown in the connection details and sent with every report. */
+const pad = (n: number) => String(n).padStart(2, '0');
+const now = new Date();
+const BUILD = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
 export default defineConfig({
   plugins: [
     svelte(),
@@ -31,4 +36,5 @@ export default defineConfig({
     }),
   ],
   build: { target: 'es2022' },
+  define: { 'import.meta.env.VITE_BUILD': JSON.stringify(BUILD) },
 });

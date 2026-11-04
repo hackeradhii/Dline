@@ -27,7 +27,7 @@ export const SignalSchema = v.variant('t', [
 ]);
 export type Signal = v.InferOutput<typeof SignalSchema>;
 
-const ROLES = ['host', 'guest'] as const;
+export const ROLES = ['host', 'guest'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const SERVER_ERRORS = ['room-full', 'no-room', 'bad-request', 'rate-limited', 'expired', 'replaced'] as const;

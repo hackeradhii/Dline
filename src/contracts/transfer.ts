@@ -54,3 +54,12 @@ export type LaneMark = v.InferOutput<typeof LaneMarkSchema>;
 
 /** Text messages on a lane, between blocks. */
 export const LaneTextSchema = v.variant('t', [BlockHeaderSchema, LaneMarkSchema]);
+
+/** Which way a file goes, seen from this device. */
+export const TRANSFER_DIRECTIONS = ['out', 'in'] as const;
+export type TransferDirection = (typeof TRANSFER_DIRECTIONS)[number];
+
+/** How a file's transfer can end, on either side (the transfer list and performance reports agree on it). */
+export const FINISHED_STATUSES = ['done', 'failed', 'cancelled'] as const;
+export type FinishedStatus = (typeof FINISHED_STATUSES)[number];
+export const isFinished = (status: string): status is FinishedStatus => (FINISHED_STATUSES as readonly string[]).includes(status);

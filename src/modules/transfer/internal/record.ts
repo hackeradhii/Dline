@@ -1,9 +1,9 @@
+import { isFinished, type FinishedStatus, type TransferDirection } from '../../../contracts/transfer';
 import { TRANSFER } from '../../../shared/config';
 import { systemClock, type Clock } from '../../../shared/timer';
 import { SpeedMeter } from './flow';
 
-type TransferDirection = 'out' | 'in';
-type TransferStatus = 'queued' | 'transferring' | 'verifying' | 'done' | 'failed' | 'cancelled';
+type TransferStatus = 'queued' | 'transferring' | 'verifying' | FinishedStatus;
 
 /** Why a file failed; the app words it (`TRANSFER_ERROR_COPY`). */
 export type TransferError =
@@ -41,8 +41,6 @@ export interface TransferItem {
   elapsedMs: number;
 }
 
-const FINAL: readonly TransferStatus[] = ['done', 'failed', 'cancelled'];
-
 /** Progress bookkeeping shared by sender and receiver (DRY): speed, ETA, throttled change events. */
 export class TransferRecord {
   readonly #item: TransferItem;
@@ -64,7 +62,7 @@ export class TransferRecord {
   }
 
   get finished(): boolean {
-    return FINAL.includes(this.#item.status);
+    return isFinished(this.#item.status);
   }
 
   progress(bytes: number): void {

@@ -4,6 +4,7 @@
   import Notice from '../../ui/Notice.svelte';
   import CallControls from '../components/CallControls.svelte';
   import IncomingCall from '../components/IncomingCall.svelte';
+  import SessionStats from '../components/SessionStats.svelte';
   import StatusBar from '../components/StatusBar.svelte';
   import TransferList from '../components/TransferList.svelte';
   import VideoStage from '../components/VideoStage.svelte';
@@ -37,7 +38,10 @@
       {/if}
     </section>
 
-    <TransferList {room} />
+    <div class="flex min-w-0 flex-col gap-7">
+      <TransferList {room} />
+      <SessionStats {room} />
+    </div>
   </main>
 </div>
 

@@ -1,5 +1,6 @@
 /** Browser implementations of the ports the modules depend on (wired only here, in the app layer). */
-import type { MediaDevicesPort } from '../contracts/ports';
+import { METRICS_PATH } from '../contracts/metrics';
+import type { MediaDevicesPort, MetricsSink } from '../contracts/ports';
 import { PACING_MODES, type PacingMode } from '../modules/transfer';
 import type { Unsubscribe } from '../shared/emitter';
 import type { Visibility } from '../shared/timer';
@@ -22,9 +23,21 @@ export const switches: Switches = (() => {
   return { pacing: asPacing(params.get('pacing')) ?? asPacing(import.meta.env.VITE_PACING) ?? 'flow', debug: params.get('debug') === '1' };
 })();
 
+/** Which build this page runs (see vite.config.ts), so a report or a screenshot says which code it came from. */
+export const buildVersion: string = import.meta.env.VITE_BUILD ?? 'dev';
+
 export const mediaDevices: MediaDevicesPort = {
   getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
   enumerateDevices: () => navigator.mediaDevices.enumerateDevices(),
+};
+
+/** Performance reports to the Worker's log: a beacon survives the tab closing; fetch is the fallback. */
+export const metricsBeacon: MetricsSink = {
+  send(event) {
+    const body = JSON.stringify(event);
+    if (navigator.sendBeacon?.(METRICS_PATH, body)) return;
+    void fetch(METRICS_PATH, { method: 'POST', body, keepalive: true }).catch(() => undefined);
+  },
 };
 
 export const pageVisibility: Visibility = {
@@ -35,6 +48,12 @@ export const pageVisibility: Visibility = {
     return () => document.removeEventListener('visibilitychange', handler);
   },
 };
+
+/** The tab is being closed or put away for good (the last moment a beacon can still go out). */
+export function onPageHide(listener: () => void): Unsubscribe {
+  window.addEventListener('pagehide', listener);
+  return () => window.removeEventListener('pagehide', listener);
+}
 
 type NetworkInformationLike = EventTarget & { type?: string };
 

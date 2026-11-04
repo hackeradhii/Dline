@@ -1,10 +1,16 @@
+import type { MetricsPath, SessionEnd } from '../../contracts/metrics';
 import type { CallController, CallNotice, CallState, MediaFlags } from '../../modules/call';
 import type { Connection, ConnectionPhase, LanePool } from '../../modules/connection';
-import { safetyCode, type ConnectionSnapshot, type StatsMonitor } from '../../modules/diagnostics';
+import { safetyCode, type ConnectionSnapshot, type PathInfo, type StatsMonitor } from '../../modules/diagnostics';
+import type { SessionMetrics, TallySnapshot } from '../../modules/metrics';
 import type { AdaptiveRateLimit, PacingStatus, TransferItem, TransferManager } from '../../modules/transfer';
 import { Disposer } from '../../shared/emitter';
 
 const NO_MEDIA: MediaFlags = { audio: false, video: false };
+
+/** What a report may say about the path: its kind and candidate types, no addresses. */
+const reportedPath = (path: PathInfo | null): MetricsPath | null =>
+  path ? { kind: path.kind, family: path.family, local: path.local.type, remote: path.remote.type } : null;
 
 /** One connected session's modules, wired by the composition root (`Session`). */
 export interface RoomParts {
@@ -14,6 +20,8 @@ export interface RoomParts {
   stats: StatsMonitor;
   /** The legacy file budget, fed from each stats tick. */
   legacyPacing: AdaptiveRateLimit;
+  /** Live totals and speeds, and the performance reports. */
+  metrics: SessionMetrics;
 }
 
 /**
@@ -39,11 +47,14 @@ export class RoomState {
   transfers = $state.raw<TransferItem[]>([]);
   /** Parallel paths carrying files right now, the main connection included. */
   lanes = $state(0);
+  /** File bytes moved both ways: totals, live speed, average and peak (one stats tick old). */
+  tally = $state.raw<TallySnapshot | null>(null);
 
   readonly call: CallController;
   readonly files: TransferManager;
   readonly #lanes: LanePool;
   readonly #stats: StatsMonitor;
+  readonly #metrics: SessionMetrics;
   readonly #disposer = new Disposer();
   // Not reactive on purpose: `transfers` is reassigned as a new array on every change.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -51,15 +62,21 @@ export class RoomState {
 
   constructor(
     readonly connection: Connection,
-    { call, files, lanes, stats, legacyPacing }: RoomParts,
+    { call, files, lanes, stats, legacyPacing, metrics }: RoomParts,
   ) {
     this.call = call;
     this.files = files;
     this.#lanes = lanes;
     this.#stats = stats;
+    this.#metrics = metrics;
 
     const on = this.#disposer.add.bind(this.#disposer);
-    on(connection.events.on('phase', (p) => (this.phase = p)));
+    on(
+      connection.events.on('phase', (p) => {
+        this.phase = p;
+        if (p === 'unstable') metrics.unstable();
+      }),
+    );
     on(connection.events.on('rtt', (r) => (this.rtt = r)));
     on(lanes.events.on('count', (n) => (this.lanes = n)));
     this.lanes = lanes.lanes.length;
@@ -70,7 +87,14 @@ export class RoomState {
         legacyPacing.update(sample, files.uploadBytesPerSecond);
         files.setFlowInputs({ mediaSendBps: s.mediaSendBps, pathKey: s.pairId, pathRttMs: s.rttMs });
         this.pacing = files.pacing;
-        lanes.fit(s.rttMs, !!s.path && !s.path.relayed && this.phase === 'connected');
+        lanes.fit(s.rttMs, !!s.path && !s.path.relayed && this.phase === 'connected', s.pairId);
+        this.tally = metrics.tick({
+          path: reportedPath(s.path),
+          rttMs: this.pacing?.pingMs ?? s.rttMs,
+          lanes: this.lanes,
+          call: call.state === 'active',
+          pacing: this.pacing?.mode ?? 'off',
+        });
       }),
     );
     // The call reaches file pacing the moment it changes, not a stats tick later (FLOW-06).
@@ -105,6 +129,11 @@ export class RoomState {
     return this.callState !== 'idle' || this.transfers.some((t) => t.status === 'transferring' || t.status === 'queued');
   }
 
+  /** The session is over (left, lost, the other side left, or the tab closed): report its totals once. */
+  endMetrics(reason: SessionEnd): void {
+    this.#metrics.end(reason);
+  }
+
   dismissNotice(): void {
     this.callNotice = null;
   }
@@ -118,6 +147,7 @@ export class RoomState {
   }
 
   #onTransfer(item: TransferItem): void {
+    this.#metrics.transfer(item);
     this.#items.set(item.id, item);
     this.transfers = [...this.#items.values()];
   }

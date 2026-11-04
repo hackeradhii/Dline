@@ -79,7 +79,7 @@ export class Connection implements ChannelFactory, StatsSource, TransceiverHost,
       iceTransportPolicy: options.iceTransportPolicy ?? 'all',
     });
 
-    const router = new SignalRouter(this.control, this.#signaler);
+    const router = new SignalRouter(this.control, this.#signaler, () => this.#phase === 'connected');
     this.#negotiator = new Negotiator(this.#pc, this.role === 'guest', router, (e) => this.events.emit('error', e));
     if (this.mode === 'rendezvous') this.#negotiator.enableAuto();
     this.#disposer.add(router.listen((signal) => this.#onSignal(signal)));

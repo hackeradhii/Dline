@@ -4,6 +4,7 @@
   import Button from '../../ui/Button.svelte';
   import Notice from '../../ui/Notice.svelte';
   import Sheet from '../../ui/Sheet.svelte';
+  import { SHARE_METRICS_COPY } from '../copy';
 
   let { session, open, onclose }: { session: Session; open: boolean; onclose: () => void } = $props();
 
@@ -14,6 +15,7 @@
   let username = $state(saved.username);
   let credential = $state(saved.credential);
   let problem = $state<string | null>(null);
+  let shareMetrics = $state(untrack(() => session.shareMetrics));
 
   function save() {
     problem = session.saveTurn({
@@ -26,8 +28,18 @@
   }
 </script>
 
-<Sheet {open} title="Relay (TURN)" {onclose}>
-  <div class="space-y-4">
+<Sheet {open} title="Settings" {onclose}>
+  <section class="space-y-3 border-b border-hairline pb-6">
+    <h3 class="font-extrabold">Performance stats</h3>
+    <label class="flex items-center gap-3 font-bold">
+      <input type="checkbox" bind:checked={shareMetrics} onchange={() => session.saveShareMetrics(shareMetrics)} class="size-5" />
+      {SHARE_METRICS_COPY.label}
+    </label>
+    <p class="text-sm text-muted">{SHARE_METRICS_COPY.detail}</p>
+  </section>
+
+  <div class="mt-6 space-y-4">
+    <h3 class="font-extrabold">Relay (TURN)</h3>
     <p class="text-sm text-muted">
       Off by default. When on, Dline still tries a direct path first and only uses the relay if none exists. Relayed traffic stays
       end-to-end encrypted, but it is <strong class="text-ink">not peer-to-peer</strong>, and the status bar will say so.

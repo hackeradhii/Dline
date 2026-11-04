@@ -42,3 +42,22 @@ export function formatMs(ms: number | null): string {
   if (ms === null || !Number.isFinite(ms)) return NO_VALUE;
   return ms < 0.5 ? '<1 ms' : `${Math.round(ms)} ms`;
 }
+
+/** "1 file", "3 files"; `many` for irregular plurals ("recoveries"). */
+export function plural(count: number, one: string, many = `${one}s`): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+interface VideoLike {
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  codec?: string | null;
+}
+
+/** "1280×720, 30 fps" (with the codec when given), or "Off" when no frames are flowing. */
+export function formatVideo(video: VideoLike | null | undefined): string {
+  if (!video?.width) return 'Off';
+  const codec = video.codec === undefined ? '' : `, ${video.codec ?? '?'}`;
+  return `${video.width}×${video.height}, ${Math.round(video.fps ?? 0)} fps${codec}`;
+}

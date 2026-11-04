@@ -1,8 +1,10 @@
 import { createRoomCode } from '../../contracts/room';
 import type { ServerErrorCode } from '../../contracts/signaling';
 import { CallController } from '../../modules/call';
+import type { MetricsProfile } from '../../contracts/metrics';
 import { browserPeerFactory, Connection, LanePool, type FailureReason } from '../../modules/connection';
 import { diagnoseNoPath, probeNetwork, remoteProfile, StatsMonitor, type NetworkProfile, type NoPathCause } from '../../modules/diagnostics';
+import { MetricsReporter, SessionMetrics } from '../../modules/metrics';
 import {
   createReply,
   deliverReply,
@@ -15,11 +17,16 @@ import {
   RendezvousSignaler,
   type LinkErrorReason,
 } from '../../modules/pairing';
-import { DEFAULT_TURN, directIceServers, iceServersFor, safeLocalStore, TurnSettings, type TurnConfig } from '../../modules/settings';
+import { DEFAULT_TURN, directIceServers, iceServersFor, MetricsSettings, safeLocalStore, TurnSettings, type TurnConfig } from '../../modules/settings';
 import { AdaptiveRateLimit, clearIncomingFiles, TransferManager } from '../../modules/transfer';
+import { randomId } from '../../shared/bytes';
 import { Disposer } from '../../shared/emitter';
-import { clearFragment, KeepAwake, mediaDevices, onNetworkChange, pageBaseUrl, pageVisibility, switches } from '../browser';
+import { describeDevice } from '../../shared/environment';
+import { buildVersion, clearFragment, KeepAwake, mediaDevices, metricsBeacon, onNetworkChange, onPageHide, pageBaseUrl, pageVisibility, switches } from '../browser';
 import { RoomState, type RoomParts } from './room.svelte';
+
+/** What a report may say about a network: no addresses. */
+const reportedProfile = (p: NetworkProfile | null): MetricsProfile | null => (p ? { udp: p.udp, ipv4: p.ipv4, ipv6: p.ipv6, relayOnly: p.relayOnly } : null);
 
 type Screen =
   | { name: 'home' }
@@ -44,17 +51,23 @@ export class Session {
   linkError = $state<LinkErrorReason | null>(null);
   serverError = $state<ServerErrorCode | null>(null);
   turn = $state.raw<TurnConfig>(DEFAULT_TURN);
+  /** Share performance reports (Settings). */
+  shareMetrics = $state(true);
 
   readonly #settings = new TurnSettings(safeLocalStore());
+  readonly #metricsSettings = new MetricsSettings(safeLocalStore());
   readonly #awake = new KeepAwake();
   #disposer = new Disposer();
   #connection: Connection | null = null;
   #signaler: RendezvousSignaler | null = null;
   #hostPairing: HostLinkPairing | null = null;
+  #reporter: MetricsReporter | null = null;
 
   constructor() {
     this.turn = this.#settings.load();
+    this.shareMetrics = this.#metricsSettings.load();
     void clearIncomingFiles();
+    onPageHide(() => this.room?.endMetrics('closed'));
   }
 
   get relayEnabled(): boolean {
@@ -144,6 +157,7 @@ export class Session {
   // ── Leaving and settings ──────────────────────────────────────────────────
 
   leave(): void {
+    this.room?.endMetrics('left');
     this.#connection?.hangUp();
     this.#teardown();
     this.screen = { name: 'home' };
@@ -153,6 +167,11 @@ export class Session {
     const problem = this.#settings.save(config);
     if (!problem) this.turn = config;
     return problem;
+  }
+
+  saveShareMetrics(enabled: boolean): void {
+    this.#metricsSettings.save(enabled);
+    this.shareMetrics = enabled;
   }
 
   dismissErrors(): void {
@@ -202,20 +221,31 @@ export class Session {
     const turn = this.#settings.load();
     const connection = new Connection({ role, signaler, iceServers: iceServersFor(turn), visibility: pageVisibility });
     this.#connection = connection;
-    this.#disposer.add(connection.events.on('phase', (phase) => phase === 'connected' && this.#enterRoom(connection)));
+    const reporter = new MetricsReporter({
+      sink: metricsBeacon,
+      enabled: this.#metricsSettings.load(),
+      common: { session: randomId(), role, mode: connection.mode, device: describeDevice(navigator.userAgent), build: buildVersion },
+    });
+    this.#reporter = reporter;
+    this.#disposer.add(
+      connection.events.on('phase', (phase) => {
+        if (phase === 'connecting') reporter.connecting();
+        if (phase === 'connected') this.#enterRoom(connection, reporter);
+      }),
+    );
     this.#disposer.add(connection.events.on('failure', (reason) => this.#onFailure(connection, reason)));
     return connection;
   }
 
-  #enterRoom(connection: Connection): void {
+  #enterRoom(connection: Connection, reporter: MetricsReporter): void {
     if (this.room) return;
-    this.room = new RoomState(connection, this.#roomParts(connection));
+    this.room = new RoomState(connection, { ...this.#roomParts(connection), metrics: new SessionMetrics(reporter) });
     this.screen = { name: 'room' };
     this.#awake.set(true);
   }
 
   /** One room's modules, on top of its connection. */
-  #roomParts(connection: Connection): RoomParts {
+  #roomParts(connection: Connection): Omit<RoomParts, 'metrics'> {
     const { control } = connection;
     const call = new CallController(control, connection, mediaDevices);
     const stats = new StatsMonitor(connection);
@@ -227,7 +257,10 @@ export class Session {
   }
 
   #onFailure(connection: Connection, reason: FailureReason): void {
-    const causes = reason === 'no-path' ? diagnoseNoPath(this.network, remoteProfile(connection.descriptions)) : [];
+    const remote = remoteProfile(connection.descriptions);
+    const causes = reason === 'no-path' ? diagnoseNoPath(this.network, remote) : [];
+    if (this.room) this.room.endMetrics(reason);
+    else this.#reporter?.failed(causes.length ? causes : [reason], reportedProfile(this.network), reportedProfile(remote));
     this.#teardown();
     this.screen = { name: 'ended', reason, causes };
   }
@@ -248,6 +281,7 @@ export class Session {
     this.#signaler?.close();
     this.#signaler = null;
     this.#hostPairing = null;
+    this.#reporter = null;
     this.#awake.set(false);
   }
 }

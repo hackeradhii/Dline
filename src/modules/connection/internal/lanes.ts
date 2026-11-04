@@ -55,6 +55,7 @@ export class LanePool implements LaneSource {
   #next = 1;
   #droppedAt = -Infinity;
   #baseRttMs: number | null = null;
+  #pathKey: string | null = null;
   #closed = false;
 
   constructor(private readonly options: LanePoolOptions) {
@@ -80,13 +81,18 @@ export class LanePool implements LaneSource {
   }
 
   /**
-   * Host only: size the pool for the path, given a fresh round-trip sample. Uses the lowest RTT seen,
-   * i.e. the path's real distance: under load, queues inflate RTT on any path, even on a LAN.
-   * Extra lanes only alongside a direct, connected main path: if that needed a relay, a direct lane
-   * won't open either.
+   * Host only: size the pool for the path, given a fresh round-trip sample. Uses the lowest RTT seen
+   * on this path, i.e. its real distance: under load, queues inflate RTT on any path, even on a LAN.
+   * A new path (e.g. Wi-Fi → mobile) starts over, or the old network's short RTT would keep a far
+   * path on a few lanes. Extra lanes only alongside a direct, connected main path: if that needed a
+   * relay, a direct lane won't open either.
    */
-  fit(rttMs: number | null, mainDirect: boolean): void {
+  fit(rttMs: number | null, mainDirect: boolean, pathKey: string | null): void {
     if (!mainDirect) return;
+    if (pathKey !== this.#pathKey) {
+      this.#pathKey = pathKey;
+      this.#baseRttMs = null;
+    }
     if (rttMs !== null) this.#baseRttMs = Math.min(this.#baseRttMs ?? rttMs, rttMs);
     this.grow(extraLanesFor(this.#baseRttMs));
   }

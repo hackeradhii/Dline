@@ -29,7 +29,7 @@
 
 <Band>
   {#snippet actions()}
-    <Button variant="band" onclick={onsettings} aria-label="Relay settings{session.relayEnabled ? ' (on)' : ''}">
+    <Button variant="band" onclick={onsettings} aria-label="Settings{session.relayEnabled ? ', relay on' : ''}">
       <Icon name="settings" size={20} />{#if session.relayEnabled}<span class="text-sm">Relay on</span>{/if}
     </Button>
   {/snippet}

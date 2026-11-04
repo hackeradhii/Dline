@@ -346,6 +346,16 @@ export const MEDIA = {
   filesFirst: { maxShortSide: 360, maxBitrateBps: 500_000 },
 } as const;
 
+export const METRICS = {
+  /** Largest report the Worker accepts. */
+  maxBodyBytes: 4 * 1024,
+  /** Live speed: averaged over this many stats ticks (progress events are throttled). */
+  liveWindowTicks: 3,
+  /** The live speed graph keeps this many ticks. */
+  historyTicks: 60,
+} as const;
+
 export const STORAGE_KEYS = {
   turn: 'dline.turn.v1',
+  metrics: 'dline.metrics.v1',
 } as const;

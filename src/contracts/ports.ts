@@ -4,6 +4,7 @@
  */
 import type { Unsubscribe } from '../shared/emitter';
 import type { ControlMessage, ControlOf, ControlType } from './control';
+import type { MetricsEvent } from './metrics';
 import type { Signal } from './signaling';
 
 /** Typed messaging over the `ctrl` data channel. */
@@ -67,6 +68,11 @@ export interface KeyValueStore {
   get(key: string): string | null;
   set(key: string, value: string): void;
   remove(key: string): void;
+}
+
+/** Where performance reports go (the Worker's log). Fire and forget: a lost report is fine. */
+export interface MetricsSink {
+  send(event: MetricsEvent): void;
 }
 
 /** SHA-256 of one block, as lowercase hex. */

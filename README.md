@@ -17,7 +17,7 @@ No app to install. No account. No media server.
 ![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=flat-square&logo=webrtc&logoColor=white)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=flat-square&logo=cloudflareworkers&logoColor=white)
 ![PWA](https://img.shields.io/badge/Installable_PWA-5A0FC8?style=flat-square&logo=pwa&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-302_passing-00855A?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-338_passing-00855A?style=flat-square)
 ![Duplicated code](https://img.shields.io/badge/duplicated_code-0_blocks-00855A?style=flat-square)
 
 [The challenge](#the-challenge) · [Features](#features) · [How it works](#how-it-works) · [Speed](#speed) · [Architecture](#architecture) · [Getting started](#getting-started)
@@ -77,7 +77,7 @@ Dline started as a challenge with a strict set of rules. Each one is met like th
   <tr>
     <td width="50%" valign="top">
       <h3>🔍 Honest diagnostics</h3>
-      A live path badge, round trip, bitrate, loss and codec, a network pre-check (Good / Risky / Blocked), a "no direct path" screen that explains why, and a 4-word <b>safety code</b> from both DTLS fingerprints that shows nobody is in the middle.
+      A live path badge, round trip, bitrate, loss and codec, <b>session stats</b> (live upload and download speed with a one-minute graph, totals, average and peak), a network pre-check (Good / Risky / Blocked), a "no direct path" screen that explains why, and a 4-word <b>safety code</b> from both DTLS fingerprints that shows nobody is in the middle.
     </td>
     <td width="50%" valign="top">
       <h3>🧪 A network lab on one laptop</h3>
@@ -200,8 +200,40 @@ A laptop on Airtel Wi-Fi and a phone on Jio 5G, direct over the internet, with a
 
 The other way, laptop → phone, the same file took 40 s (1.88 MB/s). Every file was verified with SHA-256.
 
+**Live benchmark, 4 November 2026.** Same laptop and phone on the production app. The 74.7 MB video was sent 3 times per test, and the numbers come from the app's own performance reports in the server log:
+
+| Test | Call | Median | Range (MB/s) | Ping | Lanes |
+| :-- | :-: | --: | --: | :-- | :-: |
+| Phone → laptop, same Wi-Fi | off | **5.83 MB/s** | 5.48–5.96 | 30–80 ms | 4 |
+| Phone on Jio 5G → laptop | off | **1.02 MB/s** | 0.97–1.07 | 58–148 ms | 16 |
+| Phone on Jio 5G → laptop | on | **1.00 MB/s** | 0.89–1.28 | 61–160 ms | 16 |
+| Laptop → phone on Jio 5G | on | **2.55 MB/s** | 0.93–3.61 | 60–149 ms | 16 |
+
+All 12 files were verified, with no connection dropped. On 5G the phone's upload is the limit: Dline used about 8.2 of its roughly 9.4 Mbit/s, and the call didn't slow files down.
+
+Switching the phone from Wi-Fi to 5G mid-call first ended in "Connection lost", which exposed two bugs:
+- The ICE restart was sent on the old direct channel, which still reads "open" for half a minute after the path dies. It now goes through the rendezvous while the connection is recovering.
+- The lane count kept the Wi-Fi round trip. A new path is now measured afresh.
+
+After both fixes the call and the transfer recover on their own, with 16 lanes.
+
 > [!NOTE]
 > **Flow is on by default.** Add `?pacing=legacy` for the previous pacing, `?pacing=shadow` to let Flow only measure, or `?debug=1` to show the mode and download a pacing trace. Share links carry the switches, so both devices always match.
+
+### Live and in the logs
+
+**In the app:** the **Session stats** card in the room shows file speed both ways as it happens, a one-minute graph, the totals, the average and the peak, and during a call both videos' resolution and frame rate. The average counts only the time files were moving, so idle minutes don't dilute it.
+
+**In the server log:** each device reports, with numbers only, how it connected, every finished file and the session's totals to `POST /api/metrics`. The Worker validates each report, rate-limits it (30 a minute per address) and writes one readable line with the fields attached. For example:
+
+```text
+connect: connected in 1.4s · internet IPv6 (srflx ↔ prflx) · ping 61 ms
+transfer out done: 71.2 MB of 71.2 MB in 1m 30s at 811 KB/s · 16 lanes · internet IPv6 (srflx ↔ prflx) · ping 60 ms · call on · pacing flow
+session: ended (left) after 4m 12s · up 71.2 MB in 1 file, avg 811 KB/s, peak 1.15 MB/s · down 0 B in 0 files, … · call 3m 40s · 0 recoveries · up to 16 lanes
+connect: FAILED after 20s · causes unknown · local udp yes, IPv4 symmetric, IPv6 no · remote udp yes, IPv4 cone, IPv6 no
+```
+
+Read them live with `npx wrangler tail dline-v4 --search "transfer"`, or search past ones in the Cloudflare dashboard (**Workers & Pages → dline-v4 → Logs**, for example `metrics.t = transfer`). A failed connect records both networks' NAT type and IPv6 support, so "no direct path" can be explained after the fact.
 
 ### On one laptop
 
@@ -216,7 +248,7 @@ Pairing in about 1 s. A 32 MB file at **23 MB/s**, against one raw data channel'
 > [!TIP]
 > **No server at all:** tap *Pair with links instead* and swap an invite link and a reply link through any chat app.
 
-The band at the top draws the connection as a two-station metro line from **You** to **Them**: dashed while it's being built, solid when direct, with a *Relay* interchange when relayed, and broken when lost. Each tick on the line is a lane carrying files. Tap the plate for the details: candidate types, round trip, upload queue, bitrate, packet loss, video resolution and codec, and the **safety code**. If both people see the same four words, nobody is in the middle.
+The band at the top draws the connection as a two-station metro line from **You** to **Them**: dashed while it's being built, solid when direct, with a *Relay* interchange when relayed, and broken when lost. Each tick on the line is a lane carrying files. Below the files, **Session stats** shows the live speed both ways and what the session has moved. Tap the plate for the details: candidate types, round trip, upload queue, bitrate, packet loss, video resolution and codec, and the **safety code**. If both people see the same four words, nobody is in the middle.
 
 ## Architecture
 
@@ -230,6 +262,7 @@ flowchart TD
     App --> Transfer["transfer"]
     App --> Diagnostics["diagnostics"]
     App --> Settings["settings"]
+    App --> Metrics["metrics"]
     App --> Connection["connection"]
     Pairing --> Connection
     Transfer --> Connection
@@ -237,6 +270,7 @@ flowchart TD
     Connection --> Base["contracts + shared<br/>schemas, ports, config"]
     Call --> Base
     Settings --> Base
+    Metrics --> Base
     Server["server<br/>Worker + Durable Object"] --> Base
 ```
 
@@ -254,11 +288,12 @@ src/
     call/         call state machine, transceiver reuse, camera and microphone
     transfer/     block scheduler, SHA-256 per block, file sinks (RAM / OPFS), Flow pacing
     diagnostics/  stats → path badge, network pre-check, no-path diagnosis, safety code
-    settings/     opt-in TURN, safe local storage
+    settings/     opt-in TURN, the performance-stats switch, safe local storage
+    metrics/      session totals and live speeds, performance reports (sent once each)
   contracts/      valibot message schemas and ports (interfaces), shared by app and Worker
   shared/         config (every tunable), emitter, timers, formatting, ICE candidate parsing
   ui/             presentational design system, with no access to modules
-  server/         Worker entry and the RendezvousRoom Durable Object
+  server/         Worker entry, the RendezvousRoom Durable Object and the metrics endpoint
 tests/
   e2e/            two-browser Playwright tests with a fake camera
   bench/          the network lab: UDP proxy, emulated paths, throughput and call-quality runs
@@ -326,8 +361,8 @@ npm run deploy:staging   # separate test Worker (dline); its rooms never mix wit
 
 | Layer | What it covers |
 | :-- | :-- |
-| **Unit and Worker** <br><sub>Vitest · 302 tests</sub> | Negotiation, lanes, framing, scheduling, resend, every Flow component, a simulated bottleneck with radio jitter and stalls, the Files first video cap, mixed old and new peers, the rendezvous Durable Object in workerd |
-| **End to end** <br><sub>Playwright</sub> | Pairing by code and by links, a full video call, files both ways during a call verified by SHA-256, any file type, leave detection, localhost throughput |
+| **Unit and Worker** <br><sub>Vitest · 338 tests</sub> | Negotiation, signal routing while recovering, lanes, framing, scheduling, resend, every Flow component, a simulated bottleneck with radio jitter and stalls, the Files first video cap, mixed old and new peers, the rendezvous Durable Object and the metrics endpoint in workerd |
+| **End to end** <br><sub>Playwright</sub> | Pairing by code and by links, a full video call, files both ways during a call verified by SHA-256, any file type, session stats and performance reports (and none when turned off), leave detection, localhost throughput |
 | **Network lab** <br><sub>`tests/bench`</sub> | Real browsers through emulated links: throughput, queueing delay and call quality (bitrate, frame rate, freezes, second by second, and how fast the video recovers after a transfer) |
 
 ## Privacy and security
@@ -335,10 +370,16 @@ npm run deploy:staging   # separate test Worker (dline); its rooms never mix wit
 - 🔒 **Media and files never touch a server.** The rendezvous sees only the handshake, and links-only mode uses no server at all.
 - 🔐 **Everything between the devices is encrypted** with DTLS-SRTP and DTLS.
 - 🗣️ **The safety code** lets two people confirm, out loud, that their connection is end to end.
-- 🧹 **No accounts, no analytics, no stored calls or files.** Received files live in memory or the browser's private storage and are cleared on the next start.
+- 📊 **Performance stats are numbers only.** Sizes, speeds, timings, the connection type, the browser and the app version, never file names, contents or addresses in the report. They go to the Worker's log and nowhere else. On by default, off with one switch in **Settings → Share performance stats**.
+- 🧹 **No accounts, no stored calls or files.** Received files live in memory or the browser's private storage and are cleared on the next start.
 
 ## Known limits
 
+- **Both sides need a good network connection.** Dline can only be as fast and smooth as the two networks under it. On a weak or unstable signal the ping jumps, files slow down and the call stutters, whatever the app does. A dropped connection is restarted after 5 s; with no recovery after 15 s the session ends as "Connection lost".
+- **File speed is set by the sender's upload.** Mobile networks upload far slower than they download: on Jio 5G we measured about 9.4 Mbit/s up (1.12 MiB/s) against 3.44 MiB/s down. During a call, Flow keeps the upload queue short so the call stays smooth, which leaves files 848 KB/s.
+- **Some pairs of networks can't connect directly.** Carrier NAT on both sides, a VPN, or iCloud Private Relay can leave no direct path. Dline then says "No direct path" with the likely cause; the relay (TURN, opt-in in Settings) is the fallback.
+- **Up to 16 parallel connections (lanes) per session**: 4 on the same network, 16 over the internet. More would only add queue.
+- **Files up to 64 GB.** Anything over 64 MB is written to the browser's private storage, so the receiving device needs that much free space.
 - A browser can't keep a call running in the background like a native app.
 - Each side sees the other's public IP address; that is inherent to a direct connection.
 - One-to-one only. Group calls would need a media server.
@@ -351,13 +392,13 @@ npm run deploy:staging   # separate test Worker (dline); its rooms never mix wit
 
 | # | Device A network | Device B network | Expected path | Result |
 | :-: | :-- | :-- | :-- | :-- |
-| 1 | Home Wi-Fi | Same Wi-Fi | Direct, same network | |
+| 1 | Home Wi-Fi | Same Wi-Fi | Direct, same network | ✅ Direct (IPv6), 4 lanes. Phone → laptop 5.83 MB/s median at 30–80 ms ping |
 | 2 | Home Wi-Fi | Jio 5G | Direct, likely IPv6 | ✅ Direct (IPv6, later IPv4). During a call, phone → laptop 848 KB/s at 56–83 ms ping; laptop → phone 1.88 MB/s |
 | 3 | Jio 5G | Airtel 4G/5G | Direct, likely IPv6 | |
 | 4 | Airtel | Vi | Unknown | |
 | 5 | Mobile hotspot | IPv4-only broadband | May fail without TURN | |
 | 6 | Any | Any, TURN on | Relayed | |
-| 7 | Wi-Fi, switched to mobile mid-call | Any | Recovers via ICE restart, else "lost" | |
+| 7 | Wi-Fi, switched to mobile mid-call | Any | Recovers via ICE restart, else "lost" | ✅ After two fixes: the call and the file carry on, and lanes grow back to 16 on the new path |
 | 8 | Laptop (Wi-Fi) | iPad (mobile hotspot) | Direct | |
 
 </details>
